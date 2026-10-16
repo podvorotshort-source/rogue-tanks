@@ -240,6 +240,10 @@ function toTitle() { G.state = 'title'; G.menuSel = 0; Music.play('title'); Soun
 const MENU = ['1 ИГРОК', '2 ИГРОКА', 'УПРАВЛЕНИЕ'];
 function updateTitle() {
   Music.play('title');
+  // треугольник — поменять геймпады игроков местами (с паузой от дребезга после переназначения)
+  if (Input.pads.length > 1 && Input.hit(['Pad0Y', 'Pad1Y']) && G.time > (G.swapT || 0)) {
+    Input.padSwap = !Input.padSwap; G.swapT = G.time + 0.4; Sound.play('select');
+  }
   if (anyCtrl('up')) { G.menuSel = (G.menuSel + MENU.length - 1) % MENU.length; Sound.play('select'); }
   if (anyCtrl('down')) { G.menuSel = (G.menuSel + 1) % MENU.length; Sound.play('select'); }
   if (anyCtrl('fire')) {
@@ -613,12 +617,22 @@ function drawTitle() {
   drawBrickText('ТАНКИ', W / 2, 22, 8);
   text('8-БИТНЫЙ РОГАЛИК', W / 2, 88, '#fcd820', 2, 'center', '#7c4000');
   MENU.forEach((s, i) => {
-    const y = 120 + i * 16, sel = G.menuSel === i;
+    const y = 114 + i * 14, sel = G.menuSel === i;
     text(s, W / 2 - 40, y, sel ? '#fcfcfc' : '#7c7c7c');
     if (sel) ctx.drawImage(TankGfx.get('std', 'p1')[Math.floor(G.time * 8) % 2][1], W / 2 - 62, y - 4);
   });
-  if (G.best.depth > 0) text('РЕКОРД: СЕКТОР ' + sectorName(G.best.depth) + '   ОЧКИ: ' + G.best.score, W / 2, 178, '#7c7c7c', 1, 'center');
-  text('4 БИОМА  •  4 БОССА  •  КООПЕРАТИВ НА ОДНОЙ КЛАВИАТУРЕ', W / 2, 192, '#3c78a8', 1, 'center');
+  const pads = Input.pads;
+  if (!pads.length) text('ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ', W / 2, 160, '#3c3c3c', 1, 'center');
+  else {
+    const s1 = '1P: ' + padName(pads[0]), s2 = pads[1] ? '2P: ' + padName(pads[1]) : '';
+    const gap = s2 ? 4 : 0, w1 = textWidth(s1), x0 = Math.round(W / 2 - (w1 + (s2 ? textWidth(s2) + gap * 6 : 0)) / 2);
+    text(s1, x0, 160, '#fcd820');
+    if (s2) text(s2, x0 + w1 + gap * 6, 160, '#58d854');
+    if (pads.length > 1) text('ТРЕУГОЛЬНИК - ПОМЕНЯТЬ МЕСТАМИ', W / 2, 170, '#545454', 1, 'center');
+  }
+  if (G.best.depth > 0) text('РЕКОРД: СЕКТОР ' + sectorName(G.best.depth) + '   ОЧКИ: ' + G.best.score, W / 2, 182, '#7c7c7c', 1, 'center');
+  text('4 БИОМА  •  4 БОССА  •  КООПЕРАТИВ: КЛАВИАТУРА И ГЕЙМПАДЫ', W / 2, 194, '#3c78a8', 1, 'center');
+  if (!Sound.ac || Sound.ac.state !== 'running') text('ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ', W / 2, 4, '#545454', 1, 'center');
   // парад танков внизу
   const T = getTiles(0);
   for (let x = 0; x < W; x += 8) { ctx.drawImage(T.brick, x, 240); ctx.drawImage(T.brick, x, 248); }
@@ -627,7 +641,7 @@ function drawTitle() {
     const x = ((G.time * 28 + i * 40) % (W + 240)) - 40;
     ctx.drawImage(TankGfx.get(sh, pal)[Math.floor(G.time * 10) % 2][1], Math.round(x), 222);
   });
-  if (blink(1.5)) text('ПРОБЕЛ / ENTER', W / 2, 206, '#545454', 1, 'center');
+  if (blink(1.5)) text('ПРОБЕЛ / ENTER / КРЕСТ', W / 2, 207, '#545454', 1, 'center');
 }
 
 function drawHelp() {
@@ -635,8 +649,8 @@ function drawHelp() {
   const L = [
     ['1P', '#fcd820', 'W A S D - ЕХАТЬ   ПРОБЕЛ - ОГОНЬ   E - СПЕЦПРИЁМ'],
     ['2P', '#58d854', 'СТРЕЛКИ - ЕХАТЬ   ENTER - ОГОНЬ   K - СПЕЦПРИЁМ'],
-    ['', '#7c7c7c', '(2P ТАКЖЕ: NUM0 - ОГОНЬ, NUM1 - СПЕЦ.)  ГЕЙМПАДЫ ТОЖЕ'],
-    ['', '#7c7c7c', 'ESC/P - ПАУЗА      M - МУЗЫКА ВКЛ/ВЫКЛ'],
+    ['', '#7c7c7c', 'ГЕЙМПАД: КРЕСТ/R2 - ОГОНЬ  КРУГ/L2 - СПЕЦ  OPTIONS - ПАУЗА'],
+    ['', '#7c7c7c', 'ESC/P - ПАУЗА   M - МУЗЫКА   NUM0/NUM1 - ОГОНЬ/СПЕЦ 2P'],
   ];
   L.forEach(([a, c, s], i) => { if (a) text(a, 12, 34 + i * 11, c); text(s, 30, 34 + i * 11, i < 2 ? '#fcfcfc' : c); });
   text('ПРАВИЛА', W / 2, 84, '#fcd820', 1, 'center');
@@ -672,7 +686,8 @@ function drawSelect() {
     const px = cx - 88, py = 30;
     rect(ctx, px, py, 176, 200, '#08080c');
     frame(px, py, 176, 200, S.ready[i] ? col : '#3c3c3c');
-    text(n === 1 ? 'ИГРОК' : (i ? '2P' : '1P'), cx, py + 6, col, 1, 'center');
+    const pad = n === 1 ? Input.pads[0] : Input.pads[i];
+    text((n === 1 ? 'ИГРОК' : (i ? '2P' : '1P')) + (pad ? ' - ' + padName(pad) : ''), cx, py + 6, col, 1, 'center');
     text('<  ' + C.name + '  >', cx, py + 18, '#fcfcfc', 1, 'center');
     ctx.drawImage(TankGfx.get(C.shape, i ? 'p2' : 'p1')[Math.floor(G.time * 6) % 2][0], cx - 24, py + 32, 48, 48);
     const labels = ['ПРОЧНОСТЬ', 'СКОРОСТЬ', 'СКОРОСТРЕЛ.', 'УРОН'];
@@ -684,7 +699,7 @@ function drawSelect() {
     text('СПЕЦПРИЁМ: ' + C.sname, cx, py + 140, '#3cbcfc', 1, 'center');
     wrap(C.sdesc, 27).forEach((l, k) => text(l, cx, py + 151 + k * 9, '#8c8c8c', 1, 'center'));
     if (S.ready[i]) { if (blink(4)) text('ГОТОВ!', cx, py + 182, col, 1, 'center'); }
-    else text((n === 1 ? 'ПРОБЕЛ' : i ? 'ENTER' : 'ПРОБЕЛ') + ' - ВЫБРАТЬ', cx, py + 182, '#7c7c7c', 1, 'center');
+    else text((n === 1 ? 'ПРОБЕЛ' : i ? 'ENTER' : 'ПРОБЕЛ') + '/КРЕСТ - ВЫБРАТЬ', cx, py + 182, '#7c7c7c', 1, 'center');
   }
   text('ESC - НАЗАД', W / 2, 240, '#3c3c3c', 1, 'center');
 }

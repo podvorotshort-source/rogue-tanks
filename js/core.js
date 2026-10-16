@@ -79,23 +79,55 @@ const Input = {
   any(codes) { for (const c of codes) if (this.down[c]) return true; return false; },
   hit(codes) { for (const c of codes) if (this.pressed[c]) return true; return false; },
   endStep() { this.pressed = Object.create(null); },
+  // pads[0] -> 1P, pads[1] -> 2P (по порядку подключения; padSwap меняет местами)
+  pads: [], padSwap: false,
   pollPads() {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let raw = [];
+    try { raw = navigator.getGamepads ? Array.from(navigator.getGamepads()) : []; } catch (e) { /* нет API */ }
+    const pads = raw.filter(p => p && p.connected).sort((a, b) => a.index - b.index);
+    if (this.padSwap && pads.length > 1) [pads[0], pads[1]] = [pads[1], pads[0]];
+    this.pads = pads;
     for (let i = 0; i < 2; i++) {
-      const p = pads && pads[i];
-      const b = n => !!(p && p.buttons[n] && p.buttons[n].pressed);
-      const st = p ? {
-        Up: p.axes[1] < -0.5 || b(12), Down: p.axes[1] > 0.5 || b(13),
-        Left: p.axes[0] < -0.5 || b(14), Right: p.axes[0] > 0.5 || b(15),
-        A: b(0) || b(7), B: b(1) || b(2) || b(6), Start: b(9),
-      } : {};
-      for (const k of ['Up', 'Down', 'Left', 'Right', 'A', 'B', 'Start']) {
+      const st = pads[i] ? readPad(pads[i]) : {};
+      if (st.any) Sound.unlock();
+      for (const k of ['Up', 'Down', 'Left', 'Right', 'A', 'B', 'Y', 'Start']) {
         const code = 'Pad' + i + k;
         if (st[k]) this.press(code); else if (this.down[code]) this.release(code);
       }
     }
   },
+  rumble(slot, strong = 0.6, weak = 0.4, ms = 180) {
+    const a = this.pads[slot] && this.pads[slot].vibrationActuator;
+    if (!a || !a.playEffect) return;
+    try { const r = a.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: weak }); if (r && r.catch) r.catch(() => {}); } catch (e) { /* не поддерживается */ }
+  },
 };
+// Стандартная раскладка (Chrome/Edge): 0 крест, 1 круг, 2 квадрат, 3 треугольник, 4/5 L1/R1, 6/7 L2/R2, 9 Options, 12-15 крестовина.
+// Нестандартная (Firefox, DirectInput): 0 квадрат, 1 крест, 2 круг, 3 треугольник, крестовина — ось 9.
+function readPad(p) {
+  const b = n => { const x = p.buttons[n]; return !!(x && (x.pressed || x.value > 0.5)); };
+  const ax = p.axes;
+  let up = ax[1] < -0.5, down = ax[1] > 0.5, left = ax[0] < -0.5, right = ax[0] > 0.5;
+  const std = p.mapping === 'standard';
+  if (std) { up = up || b(12); down = down || b(13); left = left || b(14); right = right || b(15); }
+  else if (ax.length > 9 && ax[9] >= -1.05 && ax[9] <= 1.05) {
+    const k = Math.round((ax[9] + 1) * 3.5); // 0 вверх, 2 вправо, 4 вниз, 6 влево
+    up = up || k === 7 || k <= 1; right = right || (k >= 1 && k <= 3); down = down || (k >= 3 && k <= 5); left = left || (k >= 5 && k <= 7);
+  }
+  const st = std
+    ? { A: b(0) || b(5) || b(7), B: b(1) || b(2) || b(4) || b(6), Y: b(3), Start: b(9) }
+    : { A: b(1) || b(5) || b(7), B: b(0) || b(2) || b(4) || b(6), Y: b(3), Start: b(9) };
+  Object.assign(st, { Up: up, Down: down, Left: left, Right: right });
+  st.any = p.buttons.some(x => x && x.pressed);
+  return st;
+}
+function padName(p) {
+  const id = (p.id || '').toLowerCase();
+  if (/0ce6|0df2|dualsense/.test(id)) return 'DUALSENSE';
+  if (/05c4|09cc|0ba0|dualshock/.test(id)) return 'DUALSHOCK 4';
+  if (/xbox|xinput|045e/.test(id)) return 'XBOX';
+  return 'ГЕЙМПАД';
+}
 const PREVENT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter', 'Tab', 'Backspace', 'NumpadEnter']);
 addEventListener('keydown', e => {
   if (PREVENT.has(e.code)) e.preventDefault();

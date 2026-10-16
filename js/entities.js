@@ -446,17 +446,23 @@ class Player extends Tank {
       this.eshieldReady = false; this.eshieldT = 15; this.inv = 0.6;
       G.effects.push(new RingFx(this.cx, this.cy, 6, 18, '#3cbcfc', 0.35));
       Sound.play('steel');
+      this.rumble(0.2, 0.4, 100);
       return false;
     }
     this.hp -= dmg; this.inv = 1.2; this.flash = 0.1;
     G.shake = Math.max(G.shake, 4);
     Sound.play('hurt');
-    if (this.hp <= 0) this.die();
+    if (this.hp <= 0) this.die(); else this.rumble(0.7, 0.5, 220);
     return true;
+  }
+  rumble(strong, weak, ms) {
+    // в одиночной игре управлять можно с любого геймпада — трясём оба
+    for (const slot of G.players.length === 1 ? [0, 1] : [this.idx]) Input.rumble(slot, strong, weak, ms);
   }
   die() {
     this.dead = true; this.hp = 0; this.revive = 0; this.barrier = 0; this.helmet = 0;
     explode(this.cx, this.cy, 18, { bricks: false });
+    this.rumble(1, 1, 450);
     if (this.weapon > 0) { this.weapon--; this.recalc(); }
     G.onPlayerDeath(this);
   }
@@ -477,6 +483,7 @@ class Player extends Tank {
   }
   doRevive() {
     this.dead = false; this.hp = Math.max(1, Math.ceil(this.maxHp / 2)); this.inv = 2; this.revive = 0;
+    this.rumble(0.3, 0.6, 250);
     Sound.play('revive');
     G.popups.push(new Popup(this.cx, this.y - 4, 'В СТРОЮ!', this.color, 1.4));
     G.effects.push(new RingFx(this.cx, this.cy, 4, 24, this.color, 0.5));

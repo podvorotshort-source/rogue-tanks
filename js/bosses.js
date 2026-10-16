@@ -41,6 +41,7 @@ class Boss {
       explode(b.x + b.w / 2, b.y + b.h / 2, 40, { bricks: true });
       Sound.play('bigboom');
       G.shake = 10; G.flashT = 0.35;
+      Input.rumble(0, 1, 1, 700); Input.rumble(1, 1, 1, 700);
       this.alive = false;
       G.onBossKilled(this);
     }
