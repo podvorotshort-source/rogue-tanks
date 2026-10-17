@@ -368,7 +368,7 @@ function drawAux(p, g) {
     const cx = p.cx, cy = p.cy, a = p.aux.mgA;
     pline(g, cx, cy, cx + Math.cos(a) * 7, cy + Math.sin(a) * 7, '#202020', 2);
     pline(g, cx, cy, cx + Math.cos(a) * 7, cy + Math.sin(a) * 7, '#fce078', 1);
-    disc(g, cx, cy, 3, '#3c2c00'); disc(g, cx, cy, 2, p.idx ? '#a8f058' : '#fce078');
+    disc(g, cx, cy, 3, '#3c2c00'); disc(g, cx, cy, 2, PALS[p.pal].l);
   }
   if (p.perks.wait && G.time - p.lastShot >= 1.5) {
     const mx = p.cx + DX[p.dir] * 9, my = p.cy + DY[p.dir] * 9;

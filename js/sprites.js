@@ -6,6 +6,7 @@
 const PALS = {
   p1: { d: '#8c5c00', m: '#e8a810', l: '#fce078', w: '#fffbe0' },
   p2: { d: '#005c18', m: '#18b030', l: '#a8f058', w: '#effff0' },
+  p3: { d: '#982060', m: '#f070b0', l: '#fcc0e0', w: '#fff0f8' },
   basic: { d: '#5c5c5c', m: '#a8a8a8', l: '#e4e4e4', w: '#ffffff' },
   fast: { d: '#0048c8', m: '#3c9cfc', l: '#a4dcfc', w: '#ffffff' },
   power: { d: '#4428bc', m: '#8c6cf0', l: '#d0b8fc', w: '#ffffff' },

@@ -79,15 +79,14 @@ const Input = {
   any(codes) { for (const c of codes) if (this.down[c]) return true; return false; },
   hit(codes) { for (const c of codes) if (this.pressed[c]) return true; return false; },
   endStep() { this.pressed = Object.create(null); },
-  // pads[0] -> 1P, pads[1] -> 2P (по порядку подключения; padSwap меняет местами)
-  pads: [], padSwap: false,
+  // подключённые геймпады по порядку подключения: pads[i] даёт коды PadI*
+  pads: [],
   pollPads() {
     let raw = [];
     try { raw = navigator.getGamepads ? Array.from(navigator.getGamepads()) : []; } catch (e) { /* нет API */ }
     const pads = raw.filter(p => p && p.connected).sort((a, b) => a.index - b.index);
-    if (this.padSwap && pads.length > 1) [pads[0], pads[1]] = [pads[1], pads[0]];
     this.pads = pads;
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < MAX_PADS; i++) {
       const st = pads[i] ? readPad(pads[i]) : {};
       if (st.any) Sound.unlock();
       for (const k of ['Up', 'Down', 'Left', 'Right', 'A', 'B', 'Y', 'Start']) {
@@ -139,20 +138,25 @@ addEventListener('keyup', e => Input.release(e.code));
 addEventListener('blur', () => { for (const k in Input.down) Input.down[k] = false; });
 addEventListener('mousedown', () => Sound.unlock());
 
-const CONTROLS = [
-  {
-    up: ['KeyW', 'Pad0Up'], down: ['KeyS', 'Pad0Down'], left: ['KeyA', 'Pad0Left'], right: ['KeyD', 'Pad0Right'],
-    fire: ['Space', 'Pad0A'], special: ['KeyE', 'KeyF', 'Pad0B'],
-    hint: 'WASD  ПРОБЕЛ  E',
-  },
-  {
-    up: ['ArrowUp', 'Pad1Up'], down: ['ArrowDown', 'Pad1Down'], left: ['ArrowLeft', 'Pad1Left'], right: ['ArrowRight', 'Pad1Right'],
-    fire: ['Enter', 'NumpadEnter', 'Numpad0', 'KeyL', 'Pad1A'], special: ['KeyK', 'ControlRight', 'Numpad1', 'Pad1B'],
-    hint: 'СТРЕЛКИ  ENTER  K',
-  },
+// Устройства управления: три раскладки на клавиатуре и до 4 геймпадов.
+// На экране выбора танка каждое устройство «входит» в игру нажатием огня и занимает свободный слот 1P/2P/3P.
+const DEVICES = [
+  { name: 'WASD', up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], fire: ['Space'], special: ['KeyE', 'KeyF'] },
+  { name: 'СТРЕЛКИ', up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], fire: ['Enter', 'KeyL'], special: ['KeyK', 'ControlRight'] },
+  { name: 'NUMPAD', up: ['Numpad8'], down: ['Numpad5', 'Numpad2'], left: ['Numpad4'], right: ['Numpad6'], fire: ['Numpad0'], special: ['NumpadEnter', 'NumpadDecimal'] },
 ];
-const KEYS_BACK = ['Escape', 'Backspace', 'Pad0Start', 'Pad1Start'];
-const KEYS_PAUSE = ['Escape', 'KeyP', 'Pad0Start', 'Pad1Start'];
+const MAX_PADS = 4;
+for (let i = 0; i < MAX_PADS; i++) {
+  const P = 'Pad' + i;
+  DEVICES.push({ pad: i, name: 'ГЕЙМПАД ' + (i + 1), up: [P + 'Up'], down: [P + 'Down'], left: [P + 'Left'], right: [P + 'Right'], fire: [P + 'A'], special: [P + 'B'] });
+}
+const devName = d => (d.pad != null && Input.pads[d.pad]) ? padName(Input.pads[d.pad]) : d.name;
+// все устройства разом: одиночная игра и меню
+const ALL_CTRL = { name: 'ЛЮБОЕ' };
+for (const k of ['up', 'down', 'left', 'right', 'fire', 'special']) ALL_CTRL[k] = DEVICES.flatMap(d => d[k]);
+const PAD_STARTS = DEVICES.filter(d => d.pad != null).map(d => 'Pad' + d.pad + 'Start');
+const KEYS_BACK = ['Escape', 'Backspace', ...PAD_STARTS];
+const KEYS_PAUSE = ['Escape', 'KeyP', ...PAD_STARTS];
 
 function ctrlDir(c) {
   let best = -1, bs = -1;
@@ -160,8 +164,8 @@ function ctrlDir(c) {
   for (let d = 0; d < 4; d++) for (const code of lists[d]) if (Input.down[code] && Input.stamp[code] > bs) { bs = Input.stamp[code]; best = d; }
   return best;
 }
-// для меню: нажатия любого из игроков
-const anyCtrl = key => CONTROLS.some(c => Input.hit(c[key]));
+// для меню: нажатия с любого устройства
+const anyCtrl = key => Input.hit(ALL_CTRL[key]);
 
 // ============================================================
 //  ЗВУК (WebAudio, 8-битные осцилляторы + шум)

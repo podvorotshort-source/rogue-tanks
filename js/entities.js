@@ -376,12 +376,13 @@ const CLASSES = {
 const CLASS_LIST = ['assault', 'scout', 'heavy'];
 const MAX_WEAPON = 5;
 
+const PLAYER_COLORS = ['#fcd820', '#58d854', '#f878c0'];
 class Player extends Tank {
-  constructor(idx, cls) {
+  constructor(idx, cls, ctrl) {
     super(0, 0, 0);
     const C = CLASSES[cls];
-    this.idx = idx; this.cls = cls; this.ctrl = CONTROLS[idx];
-    this.pal = idx ? 'p2' : 'p1'; this.shape = C.shape;
+    this.idx = idx; this.cls = cls; this.ctrl = ctrl || ALL_CTRL;
+    this.pal = 'p' + (idx + 1); this.shape = C.shape;
     this.maxHp = C.hp; this.hp = C.hp;
     this.perks = {}; this.weapon = 0; this.kills = 0; this.score = 0;
     this.dead = false; this.scd = 0; this.inv = 0; this.helmet = 0; this.barrier = 0;
@@ -390,8 +391,8 @@ class Player extends Tank {
     this.aux = newAuxState(); this.lastShot = -10;
     this.recalc();
   }
-  get color() { return this.idx ? '#58d854' : '#fcd820'; }
-  get label() { return this.idx ? '2P' : '1P'; }
+  get color() { return PLAYER_COLORS[this.idx]; }
+  get label() { return (this.idx + 1) + 'P'; }
   recalc() {
     const C = CLASSES[this.cls];
     const s = { speed: C.speed, reload: C.reload, bspeed: C.bspeed, maxB: C.maxB, dmg: C.dmg, pierce: 0, bounce: 0, power: false,
@@ -518,8 +519,9 @@ class Player extends Tank {
     return true;
   }
   rumble(strong, weak, ms) {
-    // в одиночной игре управлять можно с любого геймпада — трясём оба
-    for (const slot of G.players.length === 1 ? [0, 1] : [this.idx]) Input.rumble(slot, strong, weak, ms);
+    // трясём геймпад этого игрока; в одиночной игре управлять можно с любого — трясём все
+    if (this.ctrl.pad != null) Input.rumble(this.ctrl.pad, strong, weak, ms);
+    else if (this.ctrl === ALL_CTRL) for (let i = 0; i < MAX_PADS; i++) Input.rumble(i, strong, weak, ms);
   }
   die() {
     this.dead = true; this.hp = 0; this.revive = 0; this.barrier = 0; this.helmet = 0;
@@ -535,8 +537,8 @@ class Player extends Tank {
     }
   }
   updateWreck(dt) {
-    const other = G.players.find(p => p !== this && !p.dead);
-    if (other && dist(other.cx, other.cy, this.cx, this.cy) < 26) {
+    // поднять может любой живой напарник рядом
+    if (G.players.some(p => p !== this && !p.dead && dist(p.cx, p.cy, this.cx, this.cy) < 26)) {
       this.revive += dt;
       if (Math.random() < 0.4 && G.particles.length < 450) G.particles.push(new Particle(this.cx + rand(-8, 8), this.cy + rand(-8, 8), 0, -20, 0.4, this.color, 1));
       if (this.revive >= 2.5) this.doRevive();

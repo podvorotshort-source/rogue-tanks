@@ -71,8 +71,6 @@ const MODS = [
   { id: 'ice', name: 'ГОЛОЛЁД', desc: 'ПОЛЕ СКОВАНО ЛЬДОМ' },
 ];
 
-const SOLO_CTRL = {};
-for (const k of ['up', 'down', 'left', 'right', 'fire', 'special']) SOLO_CTRL[k] = CONTROLS[0][k].concat(CONTROLS[1][k]);
 
 const G = {
   state: 'title', time: 0, players: [], enemies: [], bullets: [], mortars: [], pickups: [], effects: [], particles: [],
@@ -166,9 +164,9 @@ function updateFlow() {
 }
 
 // ---------- забег ----------
-function newRun(classes) {
-  G.players = classes.map((c, i) => new Player(i, c));
-  if (G.players.length === 1) G.players[0].ctrl = SOLO_CTRL;
+// ctrls — устройство каждого игрока; в одиночной игре — все устройства сразу
+function newRun(classes, ctrls) {
+  G.players = classes.map((c, i) => new Player(i, c, classes.length > 1 && ctrls ? ctrls[i] : ALL_CTRL));
   G.depth = 1; G.runTime = 0; G.newRecord = false;
   startSector();
 }
@@ -176,7 +174,7 @@ function newRun(classes) {
 function startSector() {
   const info = sectorInfo(G.depth);
   G.info = info;
-  const d = (G.depth - 1) % 16 + 1, L = info.loop, two = G.players.length === 2;
+  const d = (G.depth - 1) % 16 + 1, L = info.loop, extra = G.players.length - 1; // доп. игроки: +враги, +прочность боссов
   G.mod = (!info.boss && G.depth >= 2 && Math.random() < 0.45) ? pick(MODS) : null;
   const mod = G.mod ? G.mod.id : '';
   G.level = info.boss ? generateBossArena(info.biome) : generateLevel(info.biome, { sideSpawns: d >= 5, iceMul: mod === 'ice' ? 4 : 1 });
@@ -199,16 +197,16 @@ function startSector() {
   });
   G.queue = [];
   if (!info.boss) {
-    const count = Math.round((9 + d * 1.1) * (two ? 1.5 : 1) * (mod === 'bounty' ? 1.3 : 1)) + L * 4;
+    const count = Math.round((9 + d * 1.1) * (1 + 0.5 * extra) * (mod === 'bounty' ? 1.3 : 1)) + L * 4;
     const pool = enemyPool(d);
     for (let i = 0; i < count; i++) G.queue.push({ type: weighted(pool), bonus: i === 3 || i === 10 || Math.random() < 0.05 });
     G.total = count;
-    G.maxAlive = Math.min(9, 3 + Math.floor(d / 3) + (two ? 2 : 0));
+    G.maxAlive = Math.min(9 + extra, 3 + Math.floor(d / 3) + 2 * extra);
     G.spawnInt = Math.max(1.0, 2.6 - d * 0.09);
     G.spawnT = 0.5;
   } else {
     G.total = 0;
-    G.boss = makeBoss(info.biome, (two ? 1.6 : 1) * (1 + 0.5 * L));
+    G.boss = makeBoss(info.biome, (1 + 0.6 * extra) * (1 + 0.5 * L));
   }
   G.tanks = G.players.slice();
   G.state = 'intro'; G.introT = 0;
@@ -257,7 +255,8 @@ function openPerks() {
     const id = weighted(w);
     cards.push(id); pool.splice(pool.indexOf(id), 1);
   }
-  G.perk = { cards, sel: G.players.map((p, i) => i === 0 ? 0 : cards.length - 1), done: G.players.map(() => false), t: 0, doneT: 0 };
+  const start = [0, cards.length - 1, cards.length >> 1]; // 1P слева, 2P справа, 3P посередине
+  G.perk = { cards, sel: G.players.map((p, i) => start[i]), done: G.players.map(() => false), t: 0, doneT: 0 };
   G.state = 'perk';
 }
 
@@ -289,38 +288,45 @@ function update(dt) {
 
 function toTitle() { G.state = 'title'; G.menuSel = 0; Music.play('title'); Sound.play('select'); }
 
-const MENU = ['1 ИГРОК', '2 ИГРОКА', 'УПРАВЛЕНИЕ'];
+const MENU = ['1 ИГРОК', '2 ИГРОКА', '3 ИГРОКА', 'УПРАВЛЕНИЕ'];
 function updateTitle() {
   Music.play('title');
-  // треугольник — поменять геймпады игроков местами (с паузой от дребезга после переназначения)
-  if (Input.pads.length > 1 && Input.hit(['Pad0Y', 'Pad1Y']) && G.time > (G.swapT || 0)) {
-    Input.padSwap = !Input.padSwap; G.swapT = G.time + 0.4; Sound.play('select');
-  }
   if (anyCtrl('up')) { G.menuSel = (G.menuSel + MENU.length - 1) % MENU.length; Sound.play('select'); }
   if (anyCtrl('down')) { G.menuSel = (G.menuSel + 1) % MENU.length; Sound.play('select'); }
   if (anyCtrl('fire')) {
     Sound.play('confirm');
-    if (G.menuSel === 2) { G.state = 'help'; return; }
+    if (G.menuSel === MENU.length - 1) { G.state = 'help'; return; }
     G.nPlayers = G.menuSel + 1;
-    G.sel = { cls: [0, 0], ready: [false, false], t: 0, goT: 0 };
+    // слоты игроков: dev — индекс в DEVICES (null — ещё никто не вошёл), в одиночной игре сразу «любое устройство»
+    G.sel = { slots: Array.from({ length: G.nPlayers }, () => ({ dev: G.nPlayers === 1 ? 'all' : null, cls: 0, ready: false, t: 1 })), t: 0, goT: 0 };
     G.state = 'select';
   }
 }
+const slotCtrl = sl => sl.dev === 'all' ? ALL_CTRL : DEVICES[sl.dev];
 
 function updateSelect(dt) {
-  const S = G.sel;
+  const S = G.sel, n = S.slots.length;
   S.t += dt;
   if (Input.hit(KEYS_BACK)) { G.state = 'title'; Sound.play('select'); return; }
-  for (let i = 0; i < G.nPlayers; i++) {
-    const c = G.nPlayers === 1 ? SOLO_CTRL : CONTROLS[i];
-    if (S.ready[i]) { if (Input.hit(c.special)) { S.ready[i] = false; Sound.play('select'); } continue; }
-    if (Input.hit(c.left)) { S.cls[i] = (S.cls[i] + CLASS_LIST.length - 1) % CLASS_LIST.length; Sound.play('select'); }
-    if (Input.hit(c.right)) { S.cls[i] = (S.cls[i] + 1) % CLASS_LIST.length; Sound.play('select'); }
-    if (Input.hit(c.fire) && S.t > 0.25) { S.ready[i] = true; Sound.play('confirm'); }
+  // вход: первое устройство, нажавшее огонь, занимает первый свободный слот
+  if (n > 1 && S.t > 0.25) for (let d = 0; d < DEVICES.length; d++) {
+    if (S.slots.some(s => s.dev === d) || !Input.hit(DEVICES[d].fire)) continue;
+    const free = S.slots.find(s => s.dev === null);
+    if (free) { free.dev = d; free.t = 0; free.ready = false; Sound.play('confirm'); }
   }
-  if (S.ready.slice(0, G.nPlayers).every(Boolean)) {
+  for (const sl of S.slots) {
+    if (sl.dev === null) continue;
+    sl.t += dt;
+    const c = slotCtrl(sl);
+    if (sl.ready) { if (Input.hit(c.special)) { sl.ready = false; Sound.play('select'); } continue; }
+    if (Input.hit(c.left)) { sl.cls = (sl.cls + CLASS_LIST.length - 1) % CLASS_LIST.length; Sound.play('select'); }
+    if (Input.hit(c.right)) { sl.cls = (sl.cls + 1) % CLASS_LIST.length; Sound.play('select'); }
+    if (Input.hit(c.fire) && sl.t > 0.25 && S.t > 0.25) { sl.ready = true; Sound.play('confirm'); }
+    else if (n > 1 && Input.hit(c.special) && sl.t > 0.25) { sl.dev = null; Sound.play('deny'); } // выйти из слота
+  }
+  if (S.slots.every(s => s.dev !== null && s.ready)) {
     S.goT += dt;
-    if (S.goT > 0.5) newRun(S.cls.slice(0, G.nPlayers).map(k => CLASS_LIST[k]));
+    if (S.goT > 0.5) newRun(S.slots.map(s => CLASS_LIST[s.cls]), S.slots.map(slotCtrl));
   } else S.goT = 0;
 }
 
@@ -536,37 +542,44 @@ function drawFog(g) {
 function drawHUD() {
   rect(ctx, 0, 0, W, HUD_H, '#0c0c0c');
   rect(ctx, 0, HUD_H - 1, W, 1, '#2c2c2c');
-  G.players.forEach((p, i) => drawPlayerHUD(p, i === 0 ? 3 : 259));
+  const three = G.players.length >= 3;
+  // 1-2 игрока: 1P слева, 2P справа, сектор по центру; 3 игрока: компактные панели в ряд, сектор справа
+  G.players.forEach((p, i) => drawPlayerHUD(p, three ? 2 + i * 95 : (i === 0 ? 3 : 259), three));
+  const cx = three ? 335 : W / 2, bw = three ? 88 : 110;
   if (G.boss) {
-    const b = G.boss;
-    text(b.name, W / 2, 1, '#f83800', 1, 'center');
-    const bw = 110, bx = W / 2 - bw / 2;
+    const b = G.boss, bx = cx - bw / 2;
+    text(b.name, cx, 1, '#f83800', 1, 'center');
     rect(ctx, bx - 1, 9, bw + 2, 5, '#3c0000');
     rect(ctx, bx, 10, Math.round(bw * Math.max(0, b.hp) / b.maxHp), 3, b.flash > 0 ? '#fcfcfc' : '#f83800');
   } else {
-    text('СЕКТОР ' + sectorName(G.depth), W / 2, 1, '#fcfcfc', 1, 'center');
+    text('СЕКТОР ' + sectorName(G.depth), cx, 1, '#fcfcfc', 1, 'center');
     const left = G.queue.length + G.spawners.length + G.enemies.length;
-    ctx.drawImage(TankGfx.get('basic', 'basic')[0][0], 0, 0, 16, 16, W / 2 - 26, 8, 7, 7);
-    text('× ' + left, W / 2 - 16, 8, '#a8a8a8');
+    ctx.drawImage(TankGfx.get('basic', 'basic')[0][0], 0, 0, 16, 16, cx - 26, 8, 7, 7);
+    text('× ' + left, cx - 16, 8, '#a8a8a8');
   }
   if (G.players.length === 1) {
     if (G.mod) text(G.mod.name, W - 3, 1, '#f87800', 1, 'right');
     text('ESC ПАУЗА  M МУЗЫКА', W - 3, 8, '#444444', 1, 'right');
   }
 }
-function drawPlayerHUD(p, x) {
+function drawPlayerHUD(p, x, compact) {
   text(p.label, x, 1, p.color);
   if (p.dead) {
-    if (blink(3)) text(G.players.length > 1 ? 'ПОДБИТ! ПОМОГИ' : 'ПОДБИТ!', x + 14, 1, '#f83800');
+    if (blink(3)) text(G.players.length > 1 && !compact ? 'ПОДБИТ! ПОМОГИ' : 'ПОДБИТ!', x + 14, 1, '#f83800');
+  } else if (compact && p.maxHp + (p.stats.eshield ? 1 : 0) > 9) {
+    // в тесной панели много сердец не помещается — пишем числом
+    const w = text('♥' + p.hp + '/' + p.maxHp, x + 14, 1, '#f83838');
+    if (p.stats.eshield) ctx.drawImage(p.eshieldReady ? HEART_SHIELD : HEART_EMPTY, x + 16 + w, 1);
   } else {
     for (let i = 0; i < p.maxHp; i++) ctx.drawImage(i < p.hp ? HEART_FULL : HEART_EMPTY, x + 14 + i * 8, 1);
     if (p.stats.eshield) ctx.drawImage(p.eshieldReady ? HEART_SHIELD : HEART_EMPTY, x + 14 + p.maxHp * 8 + 2, 1);
   }
   const C = CLASSES[p.cls], cd = C.cd * p.stats.cdMul, k = p.scd > 0 ? clamp(1 - p.scd / cd, 0, 1) : 1;
-  rect(ctx, x, 9, 32, 4, '#202020');
-  rect(ctx, x, 9, Math.round(32 * k), 4, k >= 1 ? (blink(4) ? '#fcfcfc' : p.color) : '#3c78a8');
-  for (let i = 0; i < MAX_WEAPON; i++) rect(ctx, x + 36 + i * 5, 9, 4, 4, i < p.weapon ? '#fcd820' : '#2c2c2c');
-  text(String(p.score).padStart(6, '0'), x + 122, 8, '#d0d0d0', 1, 'right');
+  const bw = compact ? 24 : 32, px = x + bw + 3;
+  rect(ctx, x, 9, bw, 4, '#202020');
+  rect(ctx, x, 9, Math.round(bw * k), 4, k >= 1 ? (blink(4) ? '#fcfcfc' : p.color) : '#3c78a8');
+  for (let i = 0; i < MAX_WEAPON; i++) rect(ctx, px + i * 5, 9, 4, 4, i < p.weapon ? '#fcd820' : '#2c2c2c');
+  text(String(p.score).padStart(6, '0'), x + (compact ? 92 : 122), 8, '#d0d0d0', 1, 'right');
 }
 
 function drawIntro() {
@@ -589,9 +602,9 @@ function drawIntro() {
     text('УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ: ' + G.total, W / 2, cy + 2, '#000', 1, 'center');
   }
   if (G.depth === 1) {
-    if (G.players.length === 2) {
-      text('1P: ' + CONTROLS[0].hint, W / 2, cy + 44, '#5c4000', 1, 'center');
-      text('2P: ' + CONTROLS[1].hint, W / 2, cy + 54, '#004010', 1, 'center');
+    if (G.players.length > 1) {
+      text(G.players.map(p => p.label + ': ' + devName(p.ctrl)).join('   '), W / 2, cy + 44, '#202020', 1, 'center');
+      text('ОГОНЬ - СТРЕЛЯТЬ   СПЕЦ - СПЕЦПРИЁМ', W / 2, cy + 54, '#202020', 1, 'center');
     } else text('WASD/СТРЕЛКИ  ПРОБЕЛ - ОГОНЬ  E - СПЕЦПРИЁМ', W / 2, cy + 48, '#202020', 1, 'center');
   }
 }
@@ -627,10 +640,8 @@ function drawPerk() {
   text('СЕКТОР ' + sectorName(G.depth) + ' ПРОЙДЕН' + (G.info.boss ? ' - РЕДКИЕ НАГРАДЫ!' : ''), W / 2, 27, '#7c7c7c', 1, 'center');
   const n = P.cards.length, gap = 6, cw = Math.floor((W - 24 - gap * (n - 1)) / n), ch = 160, y0 = 46;
   for (let i = 0; i < n; i++) drawCard(P, i, 12 + i * (cw + gap), y0, cw, ch);
-  if (G.players.length === 2) {
-    text('1P: A/D + ПРОБЕЛ', 12, 230, '#fcd820');
-    text('2P: ←/→ + ENTER', W - 12, 230, '#58d854', 1, 'right');
-  } else text('←/→ ВЫБОР   ПРОБЕЛ/ENTER - ВЗЯТЬ', W / 2, 230, '#7c7c7c', 1, 'center');
+  text(G.players.length > 1 ? 'КАЖДЫЙ СВОИМ УСТРОЙСТВОМ: ВЛЕВО/ВПРАВО - ВЫБОР, ОГОНЬ - ВЗЯТЬ' : '←/→ ВЫБОР   ПРОБЕЛ/ENTER - ВЗЯТЬ',
+    W / 2, 231, '#7c7c7c', 1, 'center');
   const ow = G.players.filter(p => Object.keys(p.perks).length)
     .map(p => p.label + ': ' + Object.keys(p.perks).map(k => PERKS[k].icon + (p.perks[k] > 1 ? p.perks[k] : '')).join(' ')).join('   ');
   text(ow.length > 62 ? ow.slice(0, 62) : ow, W / 2, 244, '#4c4c4c', 1, 'center');
@@ -668,10 +679,10 @@ function drawCard(P, i, x, y, w, h) {
     if (P.sel[pi] === i) {
       const c = p.color, done = P.done[pi], why = cantReason(p, id);
       if (!done || blink(4)) { frame(x - 2 - pi, y - 2 - pi, w + 4 + pi * 2, h + 4 + pi * 2, c); }
-      const ty = pi === 0 ? y - 10 : y + h + 4;
+      const ty = pi === 0 ? y - 10 : y + h + 4 + (pi - 1) * 9; // 1P над картой, 2P и 3P под ней
       text(p.label + (done ? ' ВЗЯТО' : why ? ' ' + why : ''), x + w / 2, ty, c, 1, 'center');
     }
-    if (have) text(p.label + '×' + have, pi === 0 ? x + 4 : x + w - 4, y + h - 24, p.color, 1, pi === 0 ? 'left' : 'right');
+    if (have) text(p.label + '×' + have, [x + 4, x + w - 4, x + w / 2][pi], y + h - 24, p.color, 1, ['left', 'right', 'center'][pi]);
   });
 }
 
@@ -691,26 +702,20 @@ function drawTitle() {
   drawBrickText('ТАНКИ', W / 2, 22, 8);
   text('8-БИТНЫЙ РОГАЛИК', W / 2, 88, '#fcd820', 2, 'center', '#7c4000');
   MENU.forEach((s, i) => {
-    const y = 114 + i * 14, sel = G.menuSel === i;
+    const y = 112 + i * 12, sel = G.menuSel === i;
     text(s, W / 2 - 40, y, sel ? '#fcfcfc' : '#7c7c7c');
     if (sel) ctx.drawImage(TankGfx.get('std', 'p1')[Math.floor(G.time * 8) % 2][1], W / 2 - 62, y - 4);
   });
   const pads = Input.pads;
-  if (!pads.length) text('ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ', W / 2, 160, '#3c3c3c', 1, 'center');
-  else {
-    const s1 = '1P: ' + padName(pads[0]), s2 = pads[1] ? '2P: ' + padName(pads[1]) : '';
-    const gap = s2 ? 4 : 0, w1 = textWidth(s1), x0 = Math.round(W / 2 - (w1 + (s2 ? textWidth(s2) + gap * 6 : 0)) / 2);
-    text(s1, x0, 160, '#fcd820');
-    if (s2) text(s2, x0 + w1 + gap * 6, 160, '#58d854');
-    if (pads.length > 1) text('ТРЕУГОЛЬНИК - ПОМЕНЯТЬ МЕСТАМИ', W / 2, 170, '#545454', 1, 'center');
-  }
-  if (G.best.depth > 0) text('РЕКОРД: СЕКТОР ' + sectorName(G.best.depth) + '   ОЧКИ: ' + G.best.score, W / 2, 182, '#7c7c7c', 1, 'center');
-  text('4 БИОМА  •  4 БОССА  •  КООПЕРАТИВ: КЛАВИАТУРА И ГЕЙМПАДЫ', W / 2, 194, '#3c78a8', 1, 'center');
+  text(pads.length ? 'ГЕЙМПАДЫ: ' + pads.map(padName).join(', ') : 'ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ',
+    W / 2, 166, pads.length ? '#7c7c7c' : '#3c3c3c', 1, 'center');
+  if (G.best.depth > 0) text('РЕКОРД: СЕКТОР ' + sectorName(G.best.depth) + '   ОЧКИ: ' + G.best.score, W / 2, 180, '#7c7c7c', 1, 'center');
+  text('4 БИОМА  •  4 БОССА  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ', W / 2, 194, '#3c78a8', 1, 'center');
   if (!Sound.ac || Sound.ac.state !== 'running') text('ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ', W / 2, 4, '#545454', 1, 'center');
   // парад танков внизу
   const T = getTiles(0);
   for (let x = 0; x < W; x += 8) { ctx.drawImage(T.brick, x, 240); ctx.drawImage(T.brick, x, 248); }
-  const order = [['basic', 'basic'], ['fast', 'fast'], ['armor', 'armor'], ['spread', 'spread'], ['std', 'p1'], ['heavy', 'p2']];
+  const order = [['basic', 'basic'], ['fast', 'fast'], ['armor', 'armor'], ['spread', 'spread'], ['std', 'p1'], ['heavy', 'p2'], ['scout', 'p3']];
   order.forEach(([sh, pal], i) => {
     const x = ((G.time * 28 + i * 40) % (W + 240)) - 40;
     ctx.drawImage(TankGfx.get(sh, pal)[Math.floor(G.time * 10) % 2][1], Math.round(x), 222);
@@ -721,17 +726,19 @@ function drawTitle() {
 function drawHelp() {
   text('УПРАВЛЕНИЕ', W / 2, 8, '#fcd820', 2, 'center');
   const L = [
-    ['1P', '#fcd820', 'W A S D - ЕХАТЬ   ПРОБЕЛ - ОГОНЬ   E - СПЕЦПРИЁМ'],
-    ['2P', '#58d854', 'СТРЕЛКИ - ЕХАТЬ   ENTER - ОГОНЬ   K - СПЕЦПРИЁМ'],
-    ['', '#7c7c7c', 'ГЕЙМПАД: КРЕСТ/R2 - ОГОНЬ  КРУГ/L2 - СПЕЦ  OPTIONS - ПАУЗА'],
-    ['', '#7c7c7c', 'ESC/P - ПАУЗА   M - МУЗЫКА   NUM0/NUM1 - ОГОНЬ/СПЕЦ 2P'],
+    ['#fcfcfc', 'WASD - ЕХАТЬ   ПРОБЕЛ - ОГОНЬ   E - СПЕЦПРИЁМ'],
+    ['#fcfcfc', 'СТРЕЛКИ - ЕХАТЬ   ENTER - ОГОНЬ   K - СПЕЦПРИЁМ'],
+    ['#fcfcfc', 'NUMPAD 8456 - ЕХАТЬ   0 - ОГОНЬ   ENTER - СПЕЦ'],
+    ['#bcbcbc', 'ГЕЙМПАД: КРЕСТ/R2 - ОГОНЬ  КРУГ/L2 - СПЕЦ  OPTIONS - ПАУЗА'],
+    ['#fcd820', 'ДО 3 ИГРОКОВ: ВХОД - ОГОНЬ НА СВОЁМ УСТРОЙСТВЕ'],
+    ['#7c7c7c', 'ESC/P - ПАУЗА   M - МУЗЫКА'],
   ];
-  L.forEach(([a, c, s], i) => { if (a) text(a, 12, 34 + i * 11, c); text(s, 30, 34 + i * 11, i < 2 ? '#fcfcfc' : c); });
+  L.forEach(([c, s], i) => text(s, W / 2, 26 + i * 9, c, 1, 'center'));
   text('ПРАВИЛА', W / 2, 84, '#fcd820', 1, 'center');
   const R = [
     'УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ В СЕКТОРЕ, ПОСЛЕ - ВЫБОР УЛУЧШЕНИЯ',
     'КАЖДЫЙ 4-Й СЕКТОР - БОСС. СМЕРТЬ = КОНЕЦ ЗАБЕГА',
-    'МИГАЮЩИЕ КРАСНЫМ ТАНКИ ОСТАВЛЯЮТ БОНУСЫ. ЗВЕЗДА - ОБОИМ',
+    'МИГАЮЩИЕ КРАСНЫМ ТАНКИ ОСТАВЛЯЮТ БОНУСЫ. ЗВЕЗДА - ВСЕМ',
     'ПОДБИТОГО НАПАРНИКА ПОДНИМЕТ ТОТ, КТО ПОСТОИТ РЯДОМ',
     'СНАРЯДЫ ПРОЛЕТАЮТ СКВОЗЬ НАПАРНИКА. КУСТЫ СКРЫВАЮТ ТАНКИ',
   ];
@@ -753,29 +760,39 @@ function drawHelp() {
 
 function drawSelect() {
   text('ВЫБОР ТАНКА', W / 2, 8, '#fcfcfc', 2, 'center');
-  const n = G.nPlayers, S = G.sel;
-  for (let i = 0; i < n; i++) {
-    const cx = n === 1 ? W / 2 : (i === 0 ? W / 4 : W * 3 / 4);
-    const cls = CLASS_LIST[S.cls[i]], C = CLASSES[cls], col = i ? '#58d854' : '#fcd820';
-    const px = cx - 88, py = 30;
-    rect(ctx, px, py, 176, 200, '#08080c');
-    frame(px, py, 176, 200, S.ready[i] ? col : '#3c3c3c');
-    const pad = n === 1 ? Input.pads[0] : Input.pads[i];
-    text((n === 1 ? 'ИГРОК' : (i ? '2P' : '1P')) + (pad ? ' - ' + padName(pad) : ''), cx, py + 6, col, 1, 'center');
+  const S = G.sel, n = S.slots.length;
+  // панели: 1 игрок — широкая по центру, 2 — по половинам, 3 — по третям
+  const pw = n === 3 ? 122 : 176, py = 30, ph = 200;
+  S.slots.forEach((sl, i) => {
+    const cx = n === 1 ? W / 2 : n === 2 ? (i === 0 ? W / 4 : W * 3 / 4) : W / 6 + i * W / 3;
+    const px = Math.round(cx - pw / 2), col = PLAYER_COLORS[i], narrow = pw < 150;
+    rect(ctx, px, py, pw, ph, '#08080c');
+    frame(px, py, pw, ph, sl.ready ? col : sl.dev === null ? '#202020' : '#3c3c3c');
+    const label = n === 1 ? 'ИГРОК' : (i + 1) + 'P';
+    if (sl.dev === null) { // слот ждёт игрока
+      text(label, cx, py + 6, col, 1, 'center');
+      ctx.globalAlpha = 0.25; ctx.drawImage(TankGfx.get('std', 'p' + (i + 1))[0][0], cx - 24, py + 32, 48, 48); ctx.globalAlpha = 1;
+      if (blink(2)) text('ОГОНЬ - ВОЙТИ', cx, py + 96, col, 1, 'center');
+      wrap('НАЖМИТЕ ОГОНЬ НА СВОЁМ УСТРОЙСТВЕ: ПРОБЕЛ, ENTER, NUM0 ИЛИ КРЕСТ', Math.floor((pw - 8) / 6))
+        .forEach((l, k) => text(l, cx, py + 116 + k * 9, '#545454', 1, 'center'));
+      return;
+    }
+    const C = CLASSES[CLASS_LIST[sl.cls]];
+    text(label + (sl.dev === 'all' ? '' : ' - ' + devName(DEVICES[sl.dev])), cx, py + 6, col, 1, 'center');
     text('<  ' + C.name + '  >', cx, py + 18, '#fcfcfc', 1, 'center');
-    ctx.drawImage(TankGfx.get(C.shape, i ? 'p2' : 'p1')[Math.floor(G.time * 6) % 2][0], cx - 24, py + 32, 48, 48);
-    const labels = ['ПРОЧНОСТЬ', 'СКОРОСТЬ', 'СКОРОСТРЕЛ.', 'УРОН'];
+    ctx.drawImage(TankGfx.get(C.shape, 'p' + (i + 1))[Math.floor(G.time * 6) % 2][0], cx - 24, py + 32, 48, 48);
+    const labels = ['ПРОЧНОСТЬ', 'СКОРОСТЬ', narrow ? 'ОГОНЬ' : 'СКОРОСТРЕЛ.', 'УРОН'], bx = narrow ? 60 : 84, step = narrow ? 9 : 13;
     labels.forEach((l, k) => {
       const y = py + 90 + k * 11;
-      text(l, px + 8, y, '#8c8c8c');
-      for (let j = 0; j < 6; j++) rect(ctx, px + 84 + j * 13, y, 11, 7, j < C.stats[k] ? col : '#202020');
+      text(l, px + (narrow ? 5 : 8), y, '#8c8c8c');
+      for (let j = 0; j < 6; j++) rect(ctx, px + bx + j * step, y, step - 2, 7, j < C.stats[k] ? col : '#202020');
     });
-    text('СПЕЦПРИЁМ: ' + C.sname, cx, py + 140, '#3cbcfc', 1, 'center');
-    wrap(C.sdesc, 27).forEach((l, k) => text(l, cx, py + 151 + k * 9, '#8c8c8c', 1, 'center'));
-    if (S.ready[i]) { if (blink(4)) text('ГОТОВ!', cx, py + 182, col, 1, 'center'); }
-    else text((n === 1 ? 'ПРОБЕЛ' : i ? 'ENTER' : 'ПРОБЕЛ') + '/КРЕСТ - ВЫБРАТЬ', cx, py + 182, '#7c7c7c', 1, 'center');
-  }
-  text('ESC - НАЗАД', W / 2, 240, '#3c3c3c', 1, 'center');
+    text((narrow ? 'СПЕЦ: ' : 'СПЕЦПРИЁМ: ') + C.sname, cx, py + 140, '#3cbcfc', 1, 'center');
+    wrap(C.sdesc, Math.floor((pw - 8) / 6)).forEach((l, k) => text(l, cx, py + 151 + k * 9, '#8c8c8c', 1, 'center'));
+    if (sl.ready) { if (blink(4)) text('ГОТОВ!', cx, py + 182, col, 1, 'center'); }
+    else text(narrow || n === 1 ? 'ОГОНЬ - ВЫБРАТЬ' : 'ОГОНЬ-ВЫБОР  СПЕЦ-ВЫЙТИ', cx, py + 182, '#7c7c7c', 1, 'center');
+  });
+  text(n > 1 ? 'ВЛЕВО/ВПРАВО - ТАНК   СПЕЦ - ОТМЕНА   ESC - НАЗАД' : 'ESC - НАЗАД', W / 2, 240, '#3c3c3c', 1, 'center');
 }
 
 function drawStats(y) {
