@@ -76,13 +76,13 @@ class Level {
   }
   // разрушить клетки в прямоугольнике; вернуть что задели
   destroyRect(x, y, w, h, power) {
-    const res = { brick: false, steel: false };
+    const res = { brick: false, steel: false, cells: [] }; // cells — разрушенный кирпич (для «Осколков»)
     const x0 = Math.floor(x / CELL), y0 = Math.floor(y / CELL);
     const x1 = Math.floor((x + w - 0.01) / CELL), y1 = Math.floor((y + h - 0.01) / CELL);
     const b = BIOMES[this.biome];
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
       const t = this.get(cx, cy);
-      if (t === T_BRICK) { res.brick = true; this.set(cx, cy, T_EMPTY); this.debris(cx, cy, b.brick.m); }
+      if (t === T_BRICK) { res.brick = true; res.cells.push([cx, cy]); this.set(cx, cy, T_EMPTY); this.debris(cx, cy, b.brick.m); }
       else if (t === T_STEEL) { res.steel = true; if (power) { this.set(cx, cy, T_EMPTY); this.debris(cx, cy, b.steel.m); } }
     }
     return res;

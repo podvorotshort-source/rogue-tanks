@@ -21,7 +21,46 @@ const PERKS = {
   explosive: { name: 'ФУГАС', desc: 'СНАРЯДЫ ВЗРЫВАЮТСЯ, ЗАДЕВАЯ СОСЕДЕЙ', icon: '*', rare: true, max: 1, apply: s => { s.explosive = 14; } },
   eshield: { name: 'ЭНЕРГОЩИТ', desc: 'БЛОКИРУЕТ 1 ПОПАДАНИЕ. ЗАРЯД 15 СЕК', icon: '()', rare: true, max: 1, apply: s => { s.eshield = true; } },
   vamp: { name: 'ТРОФЕЙНЫЙ РЕМОНТ', desc: '+1 ПРОЧНОСТЬ ЗА КАЖДЫЕ 12 УБИЙСТВ', icon: '×♥', rare: true, max: 1, apply: s => { s.vamp = true; } },
+
+  // стихии снарядов (основное орудие и залп)
+  inc: { name: 'ЗАЖИГАТЕЛЬНЫЕ', desc: 'ЦЕЛЬ ГОРИТ 3 С: 1 УРОН В СЕКУНДУ', icon: '♨', rare: true, max: 1, apply: s => { s.fx = { ...s.fx, inc: true }; } },
+  cryo: { name: 'КРИОСНАРЯДЫ', desc: 'ЗАМЕДЛЯЮТ, 3 ПОПАДАНИЯ ПОДРЯД ЗАМОРАЖИВАЮТ', icon: '❄', rare: true, max: 1, apply: s => { s.fx = { ...s.fx, cryo: true }; } },
+  tesla: { name: 'ТЕСЛА-СНАРЯДЫ', desc: 'МОЛНИЯ БЬЁТ ЕЩЁ 2 ВРАГОВ И ОГЛУШАЕТ', icon: '⚡', rare: true, max: 1, apply: s => { s.fx = { ...s.fx, tesla: true }; } },
+  mark: { name: 'КОРРЕКТИРОВКА', desc: 'ЦЕЛЬ 4 С ПОЛУЧАЕТ +50% УРОНА ОТ ВСЕХ', icon: '⌖', rare: true, max: 1, apply: s => { s.fx = { ...s.fx, mark: true }; } },
+
+  // доп. системы: стреляют сами, не больше 2 разных, до 3 уровня
+  mg: { name: 'ПУЛЕМЁТНАЯ ТУРЕЛЬ', desc: 'САМА БЬЁТ ОЧЕРЕДЯМИ ПО БЛИЖАЙШЕМУ ВРАГУ', icon: '≡', aux: true, max: 3 },
+  mines: { name: 'МИННЫЙ УКЛАДЧИК', desc: 'ОСТАВЛЯЕТ МИНЫ ПОЗАДИ ТАНКА', icon: '●', aux: true, max: 3 },
+  rk: { name: 'РАКЕТНАЯ УСТАНОВКА', desc: 'РАЗ В 4 С ЗАЛП РАКЕТ С НАВЕДЕНИЕМ', icon: '▲', aux: true, max: 3 },
+  coil: { name: 'ТЕСЛА-КАТУШКА', desc: 'МОЛНИЕЙ БЬЁТ И ОГЛУШАЕТ ВРАГОВ РЯДОМ', icon: '(⚡)', aux: true, max: 3 },
+  drone: { name: 'ДРОН', desc: 'КРУЖИТ РЯДОМ И СТРЕЛЯЕТ ПО ВРАГАМ', icon: '◆', aux: true, max: 3 },
+  ram: { name: 'ОТВАЛ-ТАРАН', desc: 'УРОН ПРИ НАЕЗДЕ, ОТБРАСЫВАЕТ ВРАГОВ', icon: '▌', aux: true, max: 3 },
+
+  // синергии: легендарные, появляются только когда собраны обе части
+  napalm: { name: 'НАПАЛМ', desc: 'ВАШИ ВЗРЫВЫ ОСТАВЛЯЮТ ГОРЯЩУЮ ЗЕМЛЮ', icon: '♨*', legend: true, parts: ['inc', 'explosive'] },
+  thermo: { name: 'ТЕРМОШОК', desc: 'ОГОНЬ ПО ЗАМОРОЖЕННОМУ - ТРОЙНОЙ УРОН', icon: '♨❄', legend: true, parts: ['inc', 'cryo'] },
+  shatter: { name: 'ЛЕДЯНОЙ РАСКОЛ', desc: 'ЗАМОРОЖЕННЫЙ ОТ ВЗРЫВА РАЗЛЕТАЕТСЯ ОСКОЛКАМИ', icon: '❄*', legend: true, parts: ['cryo', 'explosive'] },
+  ball: { name: 'ШАРОВАЯ МОЛНИЯ', desc: 'КАЖДЫЙ РИКОШЕТ БЬЁТ МОЛНИЕЙ', icon: '⚡<>', legend: true, parts: ['tesla', 'ricochet'] },
+  rail: { name: 'РЕЛЬСОТРОН', desc: '+2 ПРОБИТИЯ, СНАРЯДЫ В 1.5 РАЗА БЫСТРЕЕ', icon: '⚡-→', legend: true, parts: ['tesla', 'pierce'], apply: s => { s.pierce += 2; s.bspeed *= 1.5; } },
+  storm: { name: 'ШРАПНЕЛЬНЫЙ ШТОРМ', desc: '5 ДРОБИН ВМЕСТО 3 И +1 РИКОШЕТ', icon: '<\\/>', legend: true, parts: ['shotgun', 'ricochet'], apply: s => { s.pellets = 5; s.bounce += 1; } },
+  spotter: { name: 'КОРРЕКТИРОВЩИК', desc: 'РАКЕТЫ ЛЕТЯТ В ПОМЕЧЕННЫХ, УРОН ×1.5', icon: '⌖▲', legend: true, parts: ['mark', 'rk'] },
+  deton: { name: 'ДЕТОНАТОР', desc: 'ВЗРЫВЫ ПОДРЫВАЮТ ВАШИ МИНЫ, МИНЫ ×1.5', icon: '*●', legend: true, parts: ['explosive', 'mines'] },
+  mtrail: { name: 'МИННЫЙ СЛЕД', desc: 'РЫВОК ОСТАВЛЯЕТ ЦЕПОЧКУ МИН', icon: '→●', legend: true, parts: ['mines'], cls: 'scout' },
+  reflectx: { name: 'ВЗРЫВНОЕ ОТРАЖЕНИЕ', desc: 'ОТРАЖЁННЫЕ ЩИТОМ СНАРЯДЫ ВЗРЫВАЮТСЯ', icon: '()*', legend: true, parts: ['explosive'], cls: 'heavy' },
+  steelstorm: { name: 'СТАЛЬНОЙ ШТОРМ', desc: 'ЗАЛП ЛОМАЕТ СТАЛЬ И ПРОШИВАЕТ ВРАГОВ', icon: '*#', legend: true, parts: ['ap'], cls: 'assault' },
+  disch: { name: 'РАЗРЯДНИК', desc: 'БЛОК ЭНЕРГОЩИТОМ ВЫЗЫВАЕТ ЭМИ-ВОЛНУ', icon: '()⚡', legend: true, parts: ['eshield', 'tesla'] },
+
+  // карты с особым эффектом
+  dozer: { name: 'БУЛЬДОЗЕР', desc: 'ТАНК ПРОЛАМЫВАЕТ КИРПИЧ НАЕЗДОМ', icon: '→#', max: 1 },
+  shards: { name: 'ОСКОЛКИ', desc: 'РАЗБИТЫЙ КИРПИЧ РАНИТ ВРАГОВ ОСКОЛКАМИ', icon: '∴', max: 1 },
+  retal: { name: 'ОТВЕТНЫЙ ОГОНЬ', desc: 'ПОЛУЧИВ УРОН, ВЫПУСКАЕТ 8 СНАРЯДОВ', icon: '<•>', rare: true, max: 1 },
+  wait: { name: 'ВЫЖИДАНИЕ', desc: 'ПОСЛЕ 1.5 С БЕЗ ВЫСТРЕЛОВ СНАРЯД ×3 И НАСКВОЗЬ', icon: '⌛', rare: true, max: 1 },
 };
+for (const k in PERKS) if (PERKS[k].legend) PERKS[k].max = 1;
+// синергия доступна, когда у игрока есть все её части (и нужный класс)
+const synReady = (p, id) => PERKS[id].parts.every(k => p.perks[k]) && (!PERKS[id].cls || p.cls === PERKS[id].cls);
+const SYN_OF = {}; // часть -> синергии, в которые она входит
+for (const k in PERKS) if (PERKS[k].legend) for (const part of PERKS[k].parts) (SYN_OF[part] = SYN_OF[part] || []).push(k);
 
 const MODS = [
   { id: 'armored', name: 'БРОНЕКОЛОННА', desc: 'ВРАГИ ПОЛУЧАЮТ +1 ПРОЧНОСТЬ' },
@@ -38,6 +77,7 @@ for (const k of ['up', 'down', 'left', 'right', 'fire', 'special']) SOLO_CTRL[k]
 const G = {
   state: 'title', time: 0, players: [], enemies: [], bullets: [], mortars: [], pickups: [], effects: [], particles: [],
   popups: [], spawners: [], tanks: [], queue: [], boss: null, level: null, depth: 1, freeze: 0, shake: 0, flashT: 0,
+  mines: [], fires: new Map(), timers: [],
   bannerT: 0, bannerText: '', bannerCol: '#fff', menuSel: 0, paused: false, pauseSel: 0, scoreMul: 1, dropChance: 0.06,
   enemyMods: { hp: 0, speed: 1, fire: 1, hunt: 0.2, loop: 0, depth: 1 }, killedCount: 0, best: Store.get('tanks_rogue_best', { depth: 0, score: 0 }),
 
@@ -141,6 +181,7 @@ function startSector() {
   const mod = G.mod ? G.mod.id : '';
   G.level = info.boss ? generateBossArena(info.biome) : generateLevel(info.biome, { sideSpawns: d >= 5, iceMul: mod === 'ice' ? 4 : 1 });
   G.enemies = []; G.bullets = []; G.mortars = []; G.pickups = []; G.effects = []; G.particles = []; G.popups = []; G.spawners = [];
+  G.mines = []; G.fires = new Map(); G.timers = [];
   G.boss = null; G.freeze = 0; G.shake = 0; G.flashT = 0; G.bannerT = 0; G.killedCount = 0; G.flowT = 0; G.barrageT = 3;
   G.gameOverT = 0; G.bossDeadT = 0; G.paused = false; G.flow = null;
   G.enemyMods = {
@@ -193,14 +234,25 @@ function saveBest() {
   }
 }
 
-function canTake(p, id) { return (p.perks[id] || 0) < PERKS[id].max; }
+// почему игрок не может взять карту ('' — может)
+function cantReason(p, id) {
+  const P = PERKS[id];
+  if ((p.perks[id] || 0) >= P.max) return 'МАКС.';
+  if (P.legend && !synReady(p, id)) return 'НЕТ ЧАСТЕЙ';
+  if (P.aux && !p.perks[id] && auxCount(p) >= 2) return 'НЕТ СЛОТА';
+  return '';
+}
+const canTake = (p, id) => !cantReason(p, id);
 function openPerks() {
   const n = G.mod ? 4 : 3, rareRich = G.info.boss;
   const pool = Object.keys(PERKS).filter(id => G.players.some(p => canTake(p, id)));
   const cards = [];
   while (cards.length < n && pool.length) {
     const w = {};
-    for (const id of pool) w[id] = PERKS[id].rare ? (rareRich ? 10 : 3) : (rareRich ? 2 : 10);
+    for (const id of pool) {
+      const P = PERKS[id];
+      w[id] = P.legend ? 14 : P.aux ? (rareRich ? 6 : 5) : P.rare ? (rareRich ? 10 : 3) : (rareRich ? 2 : 10);
+    }
     if (G.players.every(p => p.hp >= p.maxHp) && w.repair) w.repair = 0.5;
     const id = weighted(w);
     cards.push(id); pool.splice(pool.indexOf(id), 1);
@@ -325,12 +377,16 @@ function updatePlay(dt) {
   }
   for (const s of G.spawners) s.update(dt);
   for (const e of G.enemies) if (e.alive) e.update(dt);
-  if (G.boss && G.boss.alive) G.boss.update(dt);
+  if (G.boss && G.boss.alive) { G.boss.update(dt); updateBossStatus(dt); }
   for (const b of G.bullets) if (b.alive) b.update(dt);
   for (const m of G.mortars) if (m.alive) m.update(dt);
   for (const k of G.pickups) if (k.alive) k.update(dt);
+  for (const m of G.mines) if (!m.dead) m.update(dt);
+  updateFires(dt);
+  updateTimers(dt);
   updateFx(dt);
 
+  G.mines = G.mines.filter(m => !m.dead);
   G.enemies = G.enemies.filter(e => e.alive);
   G.bullets = G.bullets.filter(b => b.alive);
   G.mortars = G.mortars.filter(m => m.alive);
@@ -434,11 +490,14 @@ function drawWorld() {
   g.beginPath(); g.rect(0, 0, FW, FH); g.clip();
   G.level.drawBase(g, G.time);
   const boss = G.boss && G.boss.alive ? G.boss : null;
+  drawFires(g);
+  for (const m of G.mines) m.draw(g);
   for (const p of G.players) if (p.dead) p.draw(g);
   for (const s of G.spawners) s.draw(g);
-  if (boss) boss.drawGround(g);
+  if (boss) { boss.drawGround(g); drawBossStatus(g); }
   for (const e of G.enemies) e.draw(g);
   for (const p of G.players) if (!p.dead) p.draw(g);
+  for (const p of G.players) drawDrones(p, g);
   for (const b of G.bullets) b.draw(g);
   G.level.drawTop(g);
   for (const e of G.effects) e.draw(g);
@@ -566,7 +625,7 @@ function drawPerk() {
   rect(ctx, 0, 0, W, H, '#06060c');
   text('ВЫБЕРИТЕ УЛУЧШЕНИЕ', W / 2, 8, '#fcd820', 2, 'center', '#5c3c00');
   text('СЕКТОР ' + sectorName(G.depth) + ' ПРОЙДЕН' + (G.info.boss ? ' - РЕДКИЕ НАГРАДЫ!' : ''), W / 2, 27, '#7c7c7c', 1, 'center');
-  const n = P.cards.length, gap = 6, cw = Math.floor((W - 24 - gap * (n - 1)) / n), ch = 148, y0 = 48;
+  const n = P.cards.length, gap = 6, cw = Math.floor((W - 24 - gap * (n - 1)) / n), ch = 160, y0 = 46;
   for (let i = 0; i < n; i++) drawCard(P, i, 12 + i * (cw + gap), y0, cw, ch);
   if (G.players.length === 2) {
     text('1P: A/D + ПРОБЕЛ', 12, 230, '#fcd820');
@@ -576,26 +635,41 @@ function drawPerk() {
     .map(p => p.label + ': ' + Object.keys(p.perks).map(k => PERKS[k].icon + (p.perks[k] > 1 ? p.perks[k] : '')).join(' ')).join('   ');
   text(ow.length > 62 ? ow.slice(0, 62) : ow, W / 2, 244, '#4c4c4c', 1, 'center');
 }
+function cardStyle(pk) {
+  if (pk.legend) return { b: '#f87800', i: '#4c2000', icon: '#f87800', label: 'ЛЕГЕНДАРНОЕ' };
+  if (pk.aux) return { b: '#3cbcfc', i: '#103c5c', icon: '#3cbcfc', label: 'СИСТЕМА' };
+  if (pk.rare) return { b: '#3cbcfc', i: '#103c5c', icon: '#3cbcfc', label: 'РЕДКОЕ' };
+  return { b: '#8c8c8c', i: '#2c2c2c', icon: '#fcfcfc', label: 'ОБЫЧНОЕ' };
+}
+// карта-часть синергии: «СИНЕРГИЯ!», если её взятие сразу открывает синергию кому-то из игроков
+function synHint(id) {
+  const syns = SYN_OF[id];
+  if (!syns) return null;
+  const opens = G.players.some(p => canTake(p, id) && syns.some(s => !p.perks[s] &&
+    PERKS[s].parts.every(k => k === id || p.perks[k]) && (!PERKS[s].cls || p.cls === PERKS[s].cls)));
+  return opens ? 'СИНЕРГИЯ!' : 'В СИНЕРГИИ';
+}
 function drawCard(P, i, x, y, w, h) {
-  const id = P.cards[i], pk = PERKS[id];
-  const border = pk.rare ? '#3cbcfc' : '#8c8c8c';
+  const id = P.cards[i], pk = PERKS[id], st = cardStyle(pk);
   rect(ctx, x, y, w, h, '#000');
-  frame(x, y, w, h, border);
-  frame(x + 2, y + 2, w - 4, h - 4, pk.rare ? '#103c5c' : '#2c2c2c');
-  text(pk.icon, x + w / 2, y + 12, pk.rare ? '#3cbcfc' : '#fcfcfc', 3, 'center');
+  frame(x, y, w, h, st.b);
+  frame(x + 2, y + 2, w - 4, h - 4, st.i);
+  text(pk.icon, x + w / 2, y + 12, st.icon, 3, 'center');
   const maxc = Math.floor((w - 10) / 6);
   let yy = y + 42;
   for (const l of wrap(pk.name, maxc)) { text(l, x + w / 2, yy, '#fcfcfc', 1, 'center'); yy += 9; }
   yy += 5;
   for (const l of wrap(pk.desc, maxc)) { text(l, x + w / 2, yy, '#a8a8a8', 1, 'center'); yy += 9; }
-  text(pk.rare ? 'РЕДКОЕ' : 'ОБЫЧНОЕ', x + w / 2, y + h - 14, border, 1, 'center');
+  const hint = synHint(id);
+  if (hint) text(hint, x + w / 2, y + h - 34, hint === 'СИНЕРГИЯ!' ? (blink(3) ? '#fcd820' : '#f87800') : '#7c4000', 1, 'center');
+  text(st.label, x + w / 2, y + h - 14, st.b, 1, 'center');
   G.players.forEach((p, pi) => {
     const have = p.perks[id] || 0;
     if (P.sel[pi] === i) {
-      const c = p.color, done = P.done[pi];
+      const c = p.color, done = P.done[pi], why = cantReason(p, id);
       if (!done || blink(4)) { frame(x - 2 - pi, y - 2 - pi, w + 4 + pi * 2, h + 4 + pi * 2, c); }
       const ty = pi === 0 ? y - 10 : y + h + 4;
-      text(p.label + (done ? ' ВЗЯТО' : !canTake(p, id) ? ' МАКС.' : ''), x + w / 2, ty, c, 1, 'center');
+      text(p.label + (done ? ' ВЗЯТО' : why ? ' ' + why : ''), x + w / 2, ty, c, 1, 'center');
     }
     if (have) text(p.label + '×' + have, pi === 0 ? x + 4 : x + w - 4, y + h - 24, p.color, 1, pi === 0 ? 'left' : 'right');
   });

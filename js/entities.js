@@ -22,6 +22,7 @@ const BOOM_COLS = ['#fcfcfc', '#fcf0a0', '#fcc040', '#f88010', '#d83000', '#8010
 class Boom {
   constructor(x, y, r, o = {}) {
     this.x = x; this.y = y; this.r = r; this.t = 0; this.dur = o.dur || (0.22 + r * 0.014);
+    this.pal = o.pal || BOOM_COLS; // ледяные взрывы — своя палитра
     this.blobs = [];
     const n = r > 10 ? 5 : 3;
     for (let i = 0; i < n; i++) { const a = rand(0, 6.28), d = rand(0.2, 0.6) * r; this.blobs.push([Math.cos(a) * d, Math.sin(a) * d, rand(0.35, 0.6) * r]); }
@@ -29,7 +30,7 @@ class Boom {
       const n2 = Math.min(16, r | 0);
       for (let i = 0; i < n2 && G.particles.length < 450; i++) {
         const a = rand(0, 6.28), s = rand(30, 110) * (r / 16);
-        G.particles.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, rand(0.25, 0.6), pick(BOOM_COLS.slice(0, 5)), randi(1, 2)));
+        G.particles.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, rand(0.25, 0.6), pick(this.pal.slice(0, 5)), randi(1, 2)));
       }
     }
   }
@@ -39,7 +40,7 @@ class Boom {
     const ci = Math.min(5, Math.floor(p * 6));
     const grow = p < 0.3 ? p / 0.3 : 1;
     const R = this.r * (0.5 + 0.5 * grow) * (p > 0.7 ? 1 - (p - 0.7) / 0.3 * 0.4 : 1);
-    const outer = BOOM_COLS[ci + 1], inner = BOOM_COLS[ci];
+    const outer = this.pal[ci + 1], inner = this.pal[ci];
     for (const b of this.blobs) disc(g, this.x + b[0] * grow, this.y + b[1] * grow, b[2] * grow * (1 - p * 0.3), outer);
     disc(g, this.x, this.y, R * 0.8, outer);
     if (p < 0.75) disc(g, this.x, this.y, R * 0.5 * (1 - p), inner);
@@ -60,8 +61,16 @@ function explode(x, y, r, o = {}) {
   G.effects.push(new Boom(x, y, r, o));
   if (o.bricks !== false) G.level.destroyCircle(x, y, Math.max(5, r * 0.75), o.power);
   if (o.hurtPlayers) for (const p of G.players) if (!p.dead && dist(x, y, p.cx, p.cy) < r + 5) p.hurt(o.dmg || 1);
-  if (o.hurtEnemies) for (const e of G.enemies) if (e.alive && e !== o.skip && dist(x, y, e.cx, e.cy) < r + 6) e.takeHit(o.dmg || 1, o.by);
-  if (o.hurtBoss && G.boss && G.boss.alive) { const part = G.boss.hitTest(x, y, r * 0.5); if (part && part !== o.skipPart) G.boss.damage(o.dmg || 1, part, null); }
+  const P = o.by instanceof Player ? o.by : null;
+  if (o.hurtEnemies) for (const e of G.enemies) {
+    if (!e.alive || e === o.skip || dist(x, y, e.cx, e.cy) >= r + 6) continue;
+    if (P && P.perks.shatter && e.frozen > 0) shatter(e, P); else e.takeHit(o.dmg || 1, o.by);
+  }
+  if (o.hurtBoss && G.boss && G.boss.alive) { const part = G.boss.hitTest(x, y, r * 0.5); if (part && part !== o.skipPart) bossHit(part, o.dmg || 1, o.by); }
+  if (P) { // синергии взрывов игрока
+    if (P.perks.napalm && r >= 8) fireArea(x, y, r * 1.1, 3.5, P);
+    if (P.perks.deton) detonateNear(x, y, 30, P);
+  }
   G.shake = Math.max(G.shake, Math.min(5, r / 5));
   if (!o.silent) Sound.play(r >= 14 ? 'boom' : 'hit');
 }
@@ -98,8 +107,13 @@ class Bullet {
     this.kind = o.kind || 'shell'; this.cancel = o.cancel !== false; this.counts = !!o.counts;
     this.hp = o.hp || 0; this.homing = o.homing || 0; this.breaks = o.breaks !== false;
     this.life = o.life || 6; this.alive = true; this.hits = null; this.age = 0;
+    // улучшения: стихии (fx), цвет, заряженный выстрел, сверло, наведение ракет игрока
+    this.fx = o.fx || null; this.col = o.col || null; this.charged = !!o.charged; this.shard = !!o.shard;
+    this.drill = o.drill || 0; this.target = o.target || null; this.accel = o.accel || 0; this.maxsp = o.maxsp || 0;
     if (this.counts && owner) owner.out++;
   }
+  // рикошет игрока с «Шаровой молнией»
+  bounced() { if (this.team === 'player' && this.owner instanceof Player && this.owner.perks.ball) ballZap(this); }
   kill() {
     if (!this.alive) return;
     this.alive = false;
@@ -111,14 +125,21 @@ class Bullet {
     this.age += dt; this.life -= dt;
     if (this.life <= 0) { if (this.explosive) explode(this.x, this.y, this.explosive, { hurtPlayers: this.team === 'enemy', silent: true }); return this.kill(); }
     if (this.homing) {
-      const t = G.nearestPlayer(this.x, this.y);
-      if (t) {
-        const a = Math.atan2(this.vy, this.vx), sp = Math.hypot(this.vx, this.vy);
-        let da = angleTo(this.x, this.y, t.cx, t.cy) - a;
-        while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
-        const na = a + clamp(da, -this.homing * dt, this.homing * dt);
-        this.vx = Math.cos(na) * sp; this.vy = Math.sin(na) * sp;
+      let tx = null, ty = 0;
+      if (this.team === 'enemy') { const t = G.nearestPlayer(this.x, this.y); if (t) { tx = t.cx; ty = t.cy; } }
+      else {
+        if (!tAlive(this.target)) this.target = findTarget(this.x, this.y, 400);
+        if (this.target) { const q = tpos(this.target); tx = q.x; ty = q.y; }
       }
+      let sp = Math.hypot(this.vx, this.vy);
+      if (this.accel) sp = Math.min(this.maxsp, sp + this.accel * dt);
+      let a = Math.atan2(this.vy, this.vx);
+      if (tx !== null) {
+        let da = angleTo(this.x, this.y, tx, ty) - a;
+        while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
+        a += clamp(da, -this.homing * dt, this.homing * dt);
+      }
+      this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp;
     }
     if ((this.kind === 'rocket' || this.kind === 'missile') && Math.random() < 0.8 && G.particles.length < 450) {
       const sp = Math.hypot(this.vx, this.vy) || 1;
@@ -135,6 +156,7 @@ class Bullet {
           if (this.x < 0 || this.x >= FW) this.vx = -this.vx;
           if (this.y < 0 || this.y >= FH) this.vy = -this.vy;
           this.x = ox; this.y = oy; this.hits = null;
+          this.bounced();
           continue;
         }
         if (this.team === 'player' && this.kind === 'shell') Sound.play('steel');
@@ -163,6 +185,7 @@ class Bullet {
       if (!bx && !by) { this.vx = -this.vx; this.vy = -this.vy; }
       this.x = ox; this.y = oy;
       if (this.team === 'player') Sound.play('steel');
+      this.bounced();
       return false;
     }
     if (this.breaks) {
@@ -171,7 +194,15 @@ class Bullet {
       if (ay > ax * 2.5) r = [this.x - 8, this.y - h, 16, this.size];
       else if (ax > ay * 2.5) r = [this.x - h, this.y - 8, this.size, 16];
       else r = [this.x - 4, this.y - 4, 8, 8];
-      L.destroyRect(r[0], r[1], r[2], r[3], this.power);
+      const res = L.destroyRect(r[0], r[1], r[2], r[3], this.power);
+      const P = this.owner instanceof Player ? this.owner : null;
+      if (P && P.perks.shards && this.kind === 'shell' && !this.shard && res.cells.length) brickShards(this, res.cells);
+      // «Стальной шторм»: снаряд-сверло проходит сквозь разрушенную стену
+      if (this.drill > 0 && (res.brick || res.steel) && (!steel || this.power)) {
+        this.drill--;
+        if (this.team === 'player') Sound.play('brick');
+        return false;
+      }
     }
     if (this.team === 'player') Sound.play(steel && !this.power ? 'steel' : 'brick');
     if (this.explosive) explode(this.x, this.y, this.explosive, { hurtPlayers: this.team === 'enemy', hurtEnemies: this.team === 'player', by: this.owner, power: this.power, silent: this.team !== 'enemy' });
@@ -185,7 +216,7 @@ class Bullet {
       if (boss && boss.alive && !boss.dying) {
         const part = boss.hitTest(this.x, this.y, h);
         if (part && !(this.hits && this.hits.has(part))) {
-          const r = boss.damage(this.dmg, part, this);
+          const r = bulletHitsBoss(this, part);
           if (r === 'reflect') {
             Sound.play('steel');
             if (G.effects.length < 200) G.effects.push(new RingFx(this.x, this.y, 1, 4, '#fcfcfc', 0.15));
@@ -199,7 +230,7 @@ class Bullet {
       for (const e of G.enemies) {
         if (!e.alive || (this.hits && this.hits.has(e))) continue;
         if (overlap(bx, by, s, s, e.x, e.y, 16, 16)) {
-          e.takeHit(this.dmg, this.owner);
+          bulletHitsEnemy(this, e);
           if (this.explosive) explode(this.x, this.y, this.explosive, { hurtEnemies: true, by: this.owner, skip: e, silent: true });
           if (this.pierce > 0) { this.pierce--; (this.hits || (this.hits = new Set())).add(e); }
           else { this.impact(); this.kill(); return true; }
@@ -221,7 +252,14 @@ class Bullet {
         if (p.barrier > 0 && dist(this.x, this.y, p.cx, p.cy) < 17) {
           this.release();
           this.team = 'player'; this.owner = p; this.cancel = true; this.homing = 0;
-          const a = angleTo(p.cx, p.cy, this.x, this.y), sp = Math.max(160, Math.hypot(this.vx, this.vy));
+          let a = angleTo(p.cx, p.cy, this.x, this.y);
+          const sp = Math.max(160, Math.hypot(this.vx, this.vy));
+          if (p.perks.reflectx) { // «Взрывное отражение»: летит в ближайшего врага и взрывается
+            const t = findTarget(this.x, this.y, 300);
+            if (t) { const q = tpos(t); a = angleTo(this.x, this.y, q.x, q.y); }
+            this.explosive = Math.max(this.explosive, 12); this.col = '#3cbcfc';
+            G.effects.push(new RingFx(this.x, this.y, 2, 8, '#e8fcff', 0.2));
+          }
           this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp; this.dmg = Math.max(this.dmg, p.stats.dmg);
           Sound.play('steel');
           return false;
@@ -239,15 +277,18 @@ class Bullet {
     const x = Math.round(this.x), y = Math.round(this.y);
     switch (this.kind) {
       case 'shell': {
-        const col = this.team === 'player' ? '#fcfcfc' : '#fc9c80';
+        const col = this.col || (this.team === 'player' ? '#fcfcfc' : '#fc9c80');
         const ax = Math.abs(this.vx), ay = Math.abs(this.vy);
-        if (this.size >= 5) { rect(g, x - 2, y - 2, 4, 4, col); rect(g, x - 1, y - 1, 2, 2, '#fcd820'); }
+        if (this.charged) { disc(g, x, y, 4 + Math.floor(this.age * 20) % 2, '#7c5800'); rect(g, x - 2, y - 2, 4, 4, '#fcd820'); rect(g, x - 1, y - 1, 2, 2, '#fcfcfc'); }
+        else if (this.size >= 5) { rect(g, x - 2, y - 2, 4, 4, col); rect(g, x - 1, y - 1, 2, 2, '#fcd820'); }
         else if (ay > ax * 2.5) { rect(g, x - 1, y - 2, 3, 4, col); rect(g, x, this.vy < 0 ? y - 3 : y + 2, 1, 1, col); }
         else if (ax > ay * 2.5) { rect(g, x - 2, y - 1, 4, 3, col); rect(g, this.vx < 0 ? x - 3 : x + 2, y, 1, 1, col); }
         else rect(g, x - 1, y - 1, 3, 3, col);
         break;
       }
-      case 'small': rect(g, x - 1, y - 1, 3, 3, this.team === 'player' ? '#fcfcfc' : '#fca044'); rect(g, x, y, 1, 1, '#fff8e0'); break;
+      case 'small':
+        if (this.team === 'player' && this.col) { rect(g, x - 1, y - 1, 2, 2, this.col); break; }
+        rect(g, x - 1, y - 1, 3, 3, this.team === 'player' ? '#fcfcfc' : '#fca044'); rect(g, x, y, 1, 1, '#fff8e0'); break;
       case 'orb': {
         const pulse = Math.floor(this.age * 12) % 2;
         disc(g, x, y, 3, this.team === 'player' ? '#3cbcfc' : (pulse ? '#f83878' : '#fc74b4'));
@@ -346,6 +387,7 @@ class Player extends Tank {
     this.dead = false; this.scd = 0; this.inv = 0; this.helmet = 0; this.barrier = 0;
     this.dashT = 0; this.dashHits = null; this.revive = 0;
     this.eshieldReady = true; this.eshieldT = 0; this.vampN = 0;
+    this.aux = newAuxState(); this.lastShot = -10;
     this.recalc();
   }
   get color() { return this.idx ? '#58d854' : '#fcd820'; }
@@ -353,7 +395,7 @@ class Player extends Tank {
   recalc() {
     const C = CLASSES[this.cls];
     const s = { speed: C.speed, reload: C.reload, bspeed: C.bspeed, maxB: C.maxB, dmg: C.dmg, pierce: 0, bounce: 0, power: false,
-      spread: false, explosive: 0, cdMul: 1, luck: 1, eshield: false, vamp: false, fieldRepair: 0 };
+      spread: false, explosive: 0, cdMul: 1, luck: 1, eshield: false, vamp: false, fieldRepair: 0, fx: null, pellets: 3 };
     for (const id in this.perks) for (let i = 0; i < this.perks[id]; i++) if (PERKS[id].apply) PERKS[id].apply(s);
     // уровни оружия от звёзд (общие для команды, до MAX_WEAPON)
     if (this.weapon >= 1) s.bspeed *= 1.3;
@@ -366,6 +408,7 @@ class Player extends Tank {
   placeAt(bx, by) {
     this.x = bx * BLK; this.y = by * BLK; this.dir = 0; this.out = 0; this.slide = 0;
     this.dashT = 0; this.barrier = 0; this.helmet = Math.max(this.helmet, 2.5); this.revive = 0;
+    this.aux.mlx = null; this.aux.mly = null;
   }
   update(dt) {
     this.flash = Math.max(0, this.flash - dt);
@@ -373,9 +416,15 @@ class Player extends Tank {
     this.cool -= dt; this.inv -= dt; this.helmet -= dt; this.barrier -= dt; this.scd -= dt;
     if (this.stats.eshield && !this.eshieldReady) { this.eshieldT -= dt; if (this.eshieldT <= 0) { this.eshieldReady = true; G.effects.push(new RingFx(this.cx, this.cy, 4, 12, '#3cbcfc', 0.3)); } }
     const onIce = G.level.onIce(this.x, this.y, 16, 16);
+    updateAux(this, dt);
     if (this.dashT > 0) {
       this.dashT -= dt;
+      if (this.perks.dozer) dozerAhead(this);
       const want = 320 * dt, m = this.move(want);
+      if (this.perks.mtrail && this.perks.mines) { // «Минный след»
+        this.aux.dashDist += m;
+        if (this.aux.dashDist >= 18) { this.aux.dashDist = 0; dropMine(this); }
+      }
       this.ram();
       if (G.particles.length < 450) G.particles.push(new Particle(this.cx + rand(-5, 5), this.cy + rand(-5, 5), 0, 0, 0.25, this.color, 2));
       if (m < want * 0.5) { this.ram(true); this.dashT = 0; }
@@ -384,7 +433,11 @@ class Player extends Tank {
     }
     const d = ctrlDir(this.ctrl);
     let moving = false;
-    if (d >= 0) { this.turn(d); this.move(this.stats.speed * dt); moving = true; this.slide = onIce ? 0.45 : 0; }
+    if (d >= 0) {
+      this.turn(d);
+      if (this.perks.dozer) dozerAhead(this);
+      this.move(this.stats.speed * dt); moving = true; this.slide = onIce ? 0.45 : 0;
+    }
     else if (this.slide > 0) {
       this.slide -= dt;
       if (onIce) { this.move(this.stats.speed * dt * 0.85); moving = true; } else this.slide = 0;
@@ -402,38 +455,45 @@ class Player extends Tank {
     const b = G.boss;
     if (b && b.alive && !b.dying && !this.dashHits.has(b)) {
       const part = b.hitTest(this.cx + DX[this.dir] * 6, this.cy + DY[this.dir] * 6, 8 + pad);
-      if (part) { this.dashHits.add(b); b.damage(3, part, null); G.shake = Math.max(G.shake, 3); }
+      if (part) { this.dashHits.add(b); bossHit(part, 3, this); G.shake = Math.max(G.shake, 3); }
     }
   }
   tryFire() {
     const s = this.stats;
     if (this.cool > 0 || this.out >= s.maxB) return;
     this.cool = s.reload;
+    // «Выжидание»: после 1.5 с без выстрелов основной снаряд тройной и пробивной
+    const charged = !!this.perks.wait && G.time - this.lastShot >= 1.5;
+    this.lastShot = G.time;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
-    const angs = s.spread ? [0, -0.24, 0.24] : [0];
+    const angs = s.spread ? (s.pellets >= 5 ? [0, -0.24, 0.24, -0.48, 0.48] : [0, -0.24, 0.24]) : [0];
     const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7;
     for (const a of angs) {
+      const ch = charged && a === 0;
       G.bullets.push(new Bullet(bx, by, Math.cos(base + a) * s.bspeed, Math.sin(base + a) * s.bspeed, 'player', this, {
-        dmg: s.dmg, power: s.power, pierce: s.pierce, bounce: s.bounce, explosive: s.explosive, size: s.dmg > 1 ? 5 : 4, counts: a === 0,
+        dmg: s.dmg * (ch ? 3 : 1), power: s.power, pierce: s.pierce + (ch ? 1 : 0), bounce: s.bounce, explosive: s.explosive,
+        size: s.dmg > 1 || ch ? 5 : 4, counts: a === 0, fx: s.fx, col: elemCol(s.fx), charged: ch,
       }));
     }
-    G.effects.push(new Boom(bx + DX[this.dir] * 2, by + DY[this.dir] * 2, 3, { dur: 0.08, quiet: true }));
-    Sound.play('shoot');
+    G.effects.push(new Boom(bx + DX[this.dir] * 2, by + DY[this.dir] * 2, charged ? 6 : 3, { dur: charged ? 0.15 : 0.08, quiet: true }));
+    Sound.play(charged ? 'cannon' : 'shoot');
   }
   trySpecial() {
     if (this.scd > 0) { Sound.play('deny'); return; }
     const C = CLASSES[this.cls], s = this.stats;
     this.scd = C.cd * s.cdMul;
     if (C.special === 'volley') {
+      const st = !!this.perks.steelstorm; // «Стальной шторм»: ломает сталь и прошивает насквозь
       for (let i = 0; i < 16; i++) {
         const a = i / 16 * Math.PI * 2;
         G.bullets.push(new Bullet(this.cx + Math.cos(a) * 7, this.cy + Math.sin(a) * 7, Math.cos(a) * s.bspeed, Math.sin(a) * s.bspeed, 'player', this,
-          { dmg: s.dmg, power: s.power, pierce: s.pierce, explosive: s.explosive, size: s.dmg > 1 ? 5 : 4 }));
+          { dmg: s.dmg, power: s.power || st, pierce: s.pierce + (st ? 2 : 0), drill: st ? 4 : 0, explosive: s.explosive,
+            size: s.dmg > 1 ? 5 : 4, fx: s.fx, col: st ? '#d8d8ec' : elemCol(s.fx) }));
       }
       G.effects.push(new RingFx(this.cx, this.cy, 4, 20, '#fcd820', 0.3));
       Sound.play('special');
     } else if (C.special === 'dash') {
-      this.dashT = 0.24; this.inv = Math.max(this.inv, 0.45); this.dashHits = new Set();
+      this.dashT = 0.24; this.inv = Math.max(this.inv, 0.45); this.dashHits = new Set(); this.aux.dashDist = 0;
       Sound.play('dash');
     } else {
       this.barrier = 3;
@@ -447,12 +507,14 @@ class Player extends Tank {
       G.effects.push(new RingFx(this.cx, this.cy, 6, 18, '#3cbcfc', 0.35));
       Sound.play('steel');
       this.rumble(0.2, 0.4, 100);
+      if (this.perks.disch) emp(this); // «Разрядник»
       return false;
     }
     this.hp -= dmg; this.inv = 1.2; this.flash = 0.1;
     G.shake = Math.max(G.shake, 4);
     Sound.play('hurt');
-    if (this.hp <= 0) this.die(); else this.rumble(0.7, 0.5, 220);
+    if (this.hp <= 0) this.die();
+    else { this.rumble(0.7, 0.5, 220); if (this.perks.retal) retaliate(this); }
     return true;
   }
   rumble(strong, weak, ms) {
@@ -503,6 +565,7 @@ class Player extends Tank {
     if (this.inv > 0 && this.dashT <= 0 && Math.floor(G.time * 20) % 2 === 0) return;
     const pal = this.flash > 0 ? 'white' : this.pal;
     g.drawImage(TankGfx.get(this.shape, pal)[this.anim][this.dir], x, y);
+    drawAux(this, g);
     if (this.helmet > 0) {
       const ph = Math.floor(G.time * 16) % 2;
       circle(g, this.cx, this.cy, 11, ph ? '#fcfcfc' : '#3cbcfc', 2);
@@ -555,16 +618,53 @@ class Enemy extends Tank {
     this.think = rand(0.2, 0.8); this.blockedT = 0; this.bonus = false;
     this.artT = rand(1.5, 3); this.aim = 0; this.fuse = 0;
     this.cool = rand(0.3, 1.2);
+    // статусы от улучшений игроков
+    this.burn = 0; this.burnT = 0; this.burnBy = null; this.slow = 0; this.chillN = 0; this.chillT = 0;
+    this.frozen = 0; this.stun = 0; this.mark = 0; this.ramCd = 0;
+  }
+  spd() { return this.speed * (this.slow > 0 ? 0.45 : 1); }
+  tickStatus(dt) {
+    if (this.ramCd > 0) this.ramCd -= dt;
+    if (this.slow > 0) this.slow -= dt;
+    if (this.frozen > 0) this.frozen -= dt;
+    if (this.stun > 0) this.stun -= dt;
+    if (this.mark > 0) this.mark -= dt;
+    if (this.chillT > 0 && (this.chillT -= dt) <= 0) this.chillN = 0;
+    if (this.slow > 0 && this.frozen <= 0 && Math.random() < dt * 8 && G.particles.length < 450)
+      G.particles.push(new Particle(this.cx + rand(-8, 8), this.cy + rand(-8, 8), 0, 6, 0.4, '#a4e4fc', 1, 1));
+    if (this.burn > 0) {
+      this.burn -= dt; this.burnT -= dt;
+      if (Math.random() < dt * 10 && G.particles.length < 450)
+        G.particles.push(new Particle(this.cx + rand(-5, 5), this.y + 3, rand(-4, 4), rand(-26, -12), 0.35, pick(['#f83800', '#fca044', '#fcd820']), 1, 0.5));
+      if (this.burnT <= 0) { this.burnT = 1; this.takeHit(1, this.burnBy); }
+    }
+  }
+  ignite(d, by) { if (this.burn <= 0) this.burnT = 1; this.burn = Math.max(this.burn, d); this.burnBy = by; }
+  chill() {
+    this.slow = 2; this.chillN++; this.chillT = 2.5;
+    if (this.chillN >= 3) {
+      this.chillN = 0; this.frozen = 1.5;
+      G.effects.push(new RingFx(this.cx, this.cy, 4, 16, '#e8fcff', 0.3), new Boom(this.cx, this.cy, 9, { pal: ICE_COLS, quiet: true }));
+      Sound.play('ice');
+    }
+  }
+  push(dir, n) { // отбрасывание тараном
+    for (let i = 0; i < n; i++) {
+      const nx = this.x + DX[dir], ny = this.y + DY[dir];
+      if (!this.free(nx, ny)) break;
+      this.x = nx; this.y = ny;
+    }
   }
   update(dt) {
     if (this.flash > 0) this.flash -= dt;
-    if (G.freeze > 0) return;
+    this.tickStatus(dt);
+    if (!this.alive || G.freeze > 0 || this.frozen > 0 || this.stun > 0) return;
     this.cool -= dt;
     if (this.type === 'kamikaze') return this.updateKamikaze(dt);
     if (this.type === 'artillery' && this.updateArtillery(dt)) return;
     this.think -= dt;
     if (this.think <= 0) this.decide(false);
-    const want = this.speed * dt, m = this.move(want);
+    const want = this.spd() * dt, m = this.move(want);
     this.animate(dt, m > 0);
     if (m < want * 0.5) {
       this.blockedT += dt;
@@ -604,7 +704,7 @@ class Enemy extends Tank {
   }
   fire() {
     if (this.cool > 0 || this.out >= this.maxB) return;
-    this.cool = this.cfg.reload / this.fireMul;
+    this.cool = this.cfg.reload / this.fireMul * (this.slow > 0 ? 1.8 : 1);
     const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
     const angs = this.type === 'spread' ? [0, -0.28, 0.28] : [0];
@@ -651,7 +751,7 @@ class Enemy extends Tank {
       if (nd < 0) nd = randi(0, 3);
       this.turn(nd); this.think = rand(0.25, 0.5);
     }
-    const want = this.speed * dt, m = this.move(want);
+    const want = this.spd() * dt, m = this.move(want);
     this.animate(dt, m > 0);
     if (m < want * 0.5) {
       this.blockedT += dt;
@@ -662,6 +762,7 @@ class Enemy extends Tank {
   }
   takeHit(dmg, by) {
     if (!this.alive) return;
+    if (this.mark > 0) dmg *= 1.5; // «Корректировка»
     this.hp -= dmg; this.flash = 0.08;
     if (this.hp <= 0) this.die(by);
     else Sound.play(this.type === 'armor' ? 'steel' : 'hit');
@@ -687,9 +788,10 @@ class Enemy extends Tank {
   draw(g) {
     let pal = this.pal;
     if (this.flash > 0) pal = 'white';
-    else if (G.freeze > 0) pal = 'frozen';
+    else if (G.freeze > 0 || this.frozen > 0) pal = 'frozen';
     else if (this.bonus && Math.floor(G.time * 8) % 2) pal = 'bonus';
     g.drawImage(TankGfx.get(this.shape, pal)[this.anim][this.dir], Math.round(this.x), Math.round(this.y));
+    drawStatus(g, this);
     if (this.type === 'artillery' && this.aim > 0) rect(g, this.cx - 1, this.cy - 1, 2, 2, Math.floor(G.time * 20) % 2 ? '#f83800' : '#fcfcfc');
     if (this.maxHp > 1 && this.hp < this.maxHp) {
       rect(g, Math.round(this.x) + 2, Math.round(this.y) - 3, 12, 2, '#200000');
