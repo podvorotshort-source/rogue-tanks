@@ -506,7 +506,7 @@ function drawPlayerHUD(p, x) {
   const C = CLASSES[p.cls], cd = C.cd * p.stats.cdMul, k = p.scd > 0 ? clamp(1 - p.scd / cd, 0, 1) : 1;
   rect(ctx, x, 9, 32, 4, '#202020');
   rect(ctx, x, 9, Math.round(32 * k), 4, k >= 1 ? (blink(4) ? '#fcfcfc' : p.color) : '#3c78a8');
-  for (let i = 0; i < 3; i++) rect(ctx, x + 36 + i * 5, 9, 4, 4, i < p.weapon ? '#fcd820' : '#2c2c2c');
+  for (let i = 0; i < MAX_WEAPON; i++) rect(ctx, x + 36 + i * 5, 9, 4, 4, i < p.weapon ? '#fcd820' : '#2c2c2c');
   text(String(p.score).padStart(6, '0'), x + 122, 8, '#d0d0d0', 1, 'right');
 }
 
@@ -657,9 +657,9 @@ function drawHelp() {
   const R = [
     'УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ В СЕКТОРЕ, ПОСЛЕ - ВЫБОР УЛУЧШЕНИЯ',
     'КАЖДЫЙ 4-Й СЕКТОР - БОСС. СМЕРТЬ = КОНЕЦ ЗАБЕГА',
-    'МИГАЮЩИЕ КРАСНЫМ ТАНКИ ОСТАВЛЯЮТ БОНУСЫ',
+    'МИГАЮЩИЕ КРАСНЫМ ТАНКИ ОСТАВЛЯЮТ БОНУСЫ. ЗВЕЗДА - ОБОИМ',
     'ПОДБИТОГО НАПАРНИКА ПОДНИМЕТ ТОТ, КТО ПОСТОИТ РЯДОМ',
-    'ВЫСТРЕЛ ПО НАПАРНИКУ ОГЛУШАЕТ ЕГО. КУСТЫ СКРЫВАЮТ ТАНКИ',
+    'СНАРЯДЫ ПРОЛЕТАЮТ СКВОЗЬ НАПАРНИКА. КУСТЫ СКРЫВАЮТ ТАНКИ',
   ];
   R.forEach((s, i) => text(s, W / 2, 96 + i * 10, '#bcbcbc', 1, 'center'));
   text('БОНУСЫ', W / 2, 152, '#fcd820', 1, 'center');

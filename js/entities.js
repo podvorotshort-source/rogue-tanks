@@ -205,10 +205,7 @@ class Bullet {
           else { this.impact(); this.kill(); return true; }
         }
       }
-      for (const p of G.players) {
-        if (p === this.owner || p.dead) continue;
-        if (overlap(bx, by, s, s, p.x + 1, p.y + 1, 14, 14)) { p.stun = 0.8; Sound.play('freeze'); this.impact(); this.kill(); return true; }
-      }
+      // снаряды игроков пролетают сквозь союзника без какого-либо эффекта
       for (const b of G.bullets) {
         if (!b.alive || b.team !== 'enemy' || !(b.cancel || b.hp)) continue;
         const bh = b.size / 2 + 1;
@@ -274,7 +271,7 @@ class Tank {
   constructor(x, y, dir) {
     this.x = x; this.y = y; this.dir = dir; this.w = 16; this.h = 16;
     this.alive = true; this.anim = 0; this.animT = 0; this.cool = 0; this.flash = 0;
-    this.slide = 0; this.stun = 0; this.out = 0; this.hp = 1; this.maxHp = 1;
+    this.slide = 0; this.out = 0; this.hp = 1; this.maxHp = 1;
   }
   get cx() { return this.x + 8; }
   get cy() { return this.y + 8; }
@@ -336,6 +333,7 @@ const CLASSES = {
     sname: 'ЩИТ', sdesc: 'НА 3 СЕК. ОТРАЖАЕТ СНАРЯДЫ', stats: [6, 2, 2, 4] },
 };
 const CLASS_LIST = ['assault', 'scout', 'heavy'];
+const MAX_WEAPON = 5;
 
 class Player extends Tank {
   constructor(idx, cls) {
@@ -357,13 +355,16 @@ class Player extends Tank {
     const s = { speed: C.speed, reload: C.reload, bspeed: C.bspeed, maxB: C.maxB, dmg: C.dmg, pierce: 0, bounce: 0, power: false,
       spread: false, explosive: 0, cdMul: 1, luck: 1, eshield: false, vamp: false, fieldRepair: 0 };
     for (const id in this.perks) for (let i = 0; i < this.perks[id]; i++) if (PERKS[id].apply) PERKS[id].apply(s);
+    // уровни оружия от звёзд (общие для команды, до MAX_WEAPON)
     if (this.weapon >= 1) s.bspeed *= 1.3;
     if (this.weapon >= 2) s.maxB += 1;
     if (this.weapon >= 3) s.power = true;
+    if (this.weapon >= 4) s.reload *= 0.75;
+    if (this.weapon >= 5) s.dmg += 1;
     this.stats = s;
   }
   placeAt(bx, by) {
-    this.x = bx * BLK; this.y = by * BLK; this.dir = 0; this.out = 0; this.slide = 0; this.stun = 0;
+    this.x = bx * BLK; this.y = by * BLK; this.dir = 0; this.out = 0; this.slide = 0;
     this.dashT = 0; this.barrier = 0; this.helmet = Math.max(this.helmet, 2.5); this.revive = 0;
   }
   update(dt) {
@@ -371,7 +372,6 @@ class Player extends Tank {
     if (this.dead) return this.updateWreck(dt);
     this.cool -= dt; this.inv -= dt; this.helmet -= dt; this.barrier -= dt; this.scd -= dt;
     if (this.stats.eshield && !this.eshieldReady) { this.eshieldT -= dt; if (this.eshieldT <= 0) { this.eshieldReady = true; G.effects.push(new RingFx(this.cx, this.cy, 4, 12, '#3cbcfc', 0.3)); } }
-    if (this.stun > 0) { this.stun -= dt; return; }
     const onIce = G.level.onIce(this.x, this.y, 16, 16);
     if (this.dashT > 0) {
       this.dashT -= dt;
@@ -501,7 +501,7 @@ class Player extends Tank {
       return;
     }
     if (this.inv > 0 && this.dashT <= 0 && Math.floor(G.time * 20) % 2 === 0) return;
-    const pal = this.stun > 0 ? (Math.floor(G.time * 10) % 2 ? 'frozen' : this.pal) : this.flash > 0 ? 'white' : this.pal;
+    const pal = this.flash > 0 ? 'white' : this.pal;
     g.drawImage(TankGfx.get(this.shape, pal)[this.anim][this.dir], x, y);
     if (this.helmet > 0) {
       const ph = Math.floor(G.time * 16) % 2;
@@ -744,13 +744,21 @@ class Pickup {
         for (const e of G.enemies) if (e.alive) e.die(p);
         if (G.boss && G.boss.alive && !G.boss.dying) G.boss.damage(10, 'grenade', null);
         G.flashT = 0.25; break;
-      case 'star':
-        if (p.weapon < 3) { p.weapon++; p.recalc(); msg = 'ОРУЖИЕ УР.' + p.weapon; } else { p.score += 1000; msg = '+1000'; }
+      case 'star': {
+        // звезда улучшает оружие сразу всем игрокам (и подбитому напарнику тоже)
+        let upgraded = false;
+        for (const q of G.players) {
+          if (q.weapon >= MAX_WEAPON) continue;
+          q.weapon++; q.recalc(); upgraded = true;
+          G.popups.push(new Popup(q.cx, q.y - 6, 'ОРУЖИЕ УР.' + q.weapon, q.color, 1.4));
+        }
+        if (upgraded) msg = null; else { p.score += 1000; msg = '+1000'; }
         break;
+      }
       case 'repair': p.hp = Math.min(p.maxHp, p.hp + 2); break;
     }
     p.score += 500;
-    G.popups.push(new Popup(this.x + 8, this.y, msg, '#fcd820', 1.2));
+    if (msg) G.popups.push(new Popup(this.x + 8, this.y, msg, '#fcd820', 1.2));
   }
   draw(g) {
     if (this.life - this.t < 3 && Math.floor(this.t * 8) % 2) return;
