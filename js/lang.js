@@ -1,0 +1,142 @@
+'use strict';
+// ============================================================
+//  LANG: переключение языка. Исходные строки в коде — русские,
+//  tr() подменяет их английскими по словарю (text() и wrap() зовут его сами)
+// ============================================================
+
+let LANG = Store.get('tanks_lang', 'ru') === 'en' ? 'en' : 'ru';
+function setLang(l) {
+  LANG = l;
+  Store.set('tanks_lang', l);
+  document.documentElement.lang = l;
+  document.title = l === 'en' ? 'Tanks: Roguelike' : 'Танки: Рогалик';
+}
+const tr = s => (LANG === 'en' && EN[s] !== undefined ? EN[s] : s);
+
+const EN = {
+  // меню и экраны
+  'ТАНКИ': 'TANKS', '8-БИТНЫЙ РОГАЛИК': '8-BIT ROGUELIKE',
+  '1 ИГРОК': '1 PLAYER', '2 ИГРОКА': '2 PLAYERS', '3 ИГРОКА': '3 PLAYERS', 'УПРАВЛЕНИЕ': 'CONTROLS',
+  'ЯЗЫК: РУССКИЙ': 'LANGUAGE: ENGLISH',
+  'ГЕЙМПАДЫ:': 'GAMEPADS:', 'ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ': 'GAMEPADS: PRESS ANY BUTTON ON A GAMEPAD',
+  'РЕКОРД: СЕКТОР': 'BEST: SECTOR', 'ОЧКИ:': 'SCORE:',
+  '4 БИОМА  •  4 БОССА  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ': '4 BIOMES  •  4 BOSSES  •  UP TO 3 PLAYERS: KEYBOARD AND PADS',
+  'ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ': 'PRESS A KEY OR CLICK FOR SOUND',
+  'ПРОБЕЛ / ENTER / КРЕСТ': 'SPACE / ENTER / CROSS',
+  'WASD - ЕХАТЬ   ПРОБЕЛ - ОГОНЬ   E - СПЕЦПРИЁМ': 'WASD - MOVE   SPACE - FIRE   E - SPECIAL',
+  'СТРЕЛКИ - ЕХАТЬ   ENTER - ОГОНЬ   K - СПЕЦПРИЁМ': 'ARROWS - MOVE   ENTER - FIRE   K - SPECIAL',
+  'NUMPAD 8456 - ЕХАТЬ   0 - ОГОНЬ   ENTER - СПЕЦ': 'NUMPAD 8456 - MOVE   0 - FIRE   ENTER - SPECIAL',
+  'ГЕЙМПАД: КРЕСТ/R2 - ОГОНЬ  КРУГ/L2 - СПЕЦ  OPTIONS - ПАУЗА': 'GAMEPAD: CROSS/R2 - FIRE  CIRCLE/L2 - SPECIAL  OPTIONS - PAUSE',
+  'ДО 3 ИГРОКОВ: ВХОД - ОГОНЬ НА СВОЁМ УСТРОЙСТВЕ': 'UP TO 3 PLAYERS: JOIN WITH FIRE ON YOUR DEVICE',
+  'ESC/P - ПАУЗА   M - МУЗЫКА': 'ESC/P - PAUSE   M - MUSIC',
+  'ПРАВИЛА': 'RULES',
+  'УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ В СЕКТОРЕ, ПОСЛЕ - ВЫБОР УЛУЧШЕНИЯ': 'DESTROY ALL ENEMIES IN A SECTOR, THEN PICK AN UPGRADE',
+  'КАЖДЫЙ 4-Й СЕКТОР - БОСС. СМЕРТЬ = КОНЕЦ ЗАБЕГА': 'EVERY 4TH SECTOR IS A BOSS. DEATH ENDS THE RUN',
+  'МИГАЮЩИЕ КРАСНЫМ ТАНКИ ОСТАВЛЯЮТ БОНУСЫ. ЗВЕЗДА - ВСЕМ': 'RED-FLASHING TANKS DROP BONUSES. STAR IS SHARED',
+  'ПОДБИТОГО НАПАРНИКА ПОДНИМЕТ ТОТ, КТО ПОСТОИТ РЯДОМ': 'STAND NEXT TO A DOWNED ALLY TO REVIVE THEM',
+  'СНАРЯДЫ ПРОЛЕТАЮТ СКВОЗЬ НАПАРНИКА. КУСТЫ СКРЫВАЮТ ТАНКИ': 'SHELLS PASS THROUGH ALLIES. BUSHES HIDE TANKS',
+  'БОНУСЫ': 'BONUSES', 'ВРАГИ': 'ENEMIES',
+  'КАСКА - ЩИТ': 'HELMET - SHIELD', 'ЧАСЫ - ЗАМОРОЗКА': 'CLOCK - FREEZE', 'ГРАНАТА - ВЗРЫВ': 'GRENADE - BLAST',
+  'ЗВЕЗДА - ОРУЖИЕ+': 'STAR - WEAPON+', 'РЕМОНТ +2': 'REPAIR +2',
+  'ВЫБОР ТАНКА': 'CHOOSE TANK', 'ИГРОК': 'PLAYER', 'ОГОНЬ - ВОЙТИ': 'FIRE - JOIN',
+  'НАЖМИТЕ ОГОНЬ НА СВОЁМ УСТРОЙСТВЕ: ПРОБЕЛ, ENTER, NUM0 ИЛИ КРЕСТ': 'PRESS FIRE ON YOUR DEVICE: SPACE, ENTER, NUM0 OR CROSS',
+  'ПРОЧНОСТЬ': 'ARMOR', 'СКОРОСТЬ': 'SPEED', 'ОГОНЬ': 'FIRE', 'СКОРОСТРЕЛ.': 'FIRE RATE', 'УРОН': 'DAMAGE',
+  'СПЕЦ:': 'SPEC:', 'СПЕЦПРИЁМ:': 'SPECIAL:', 'ГОТОВ!': 'READY!',
+  'ОГОНЬ - ВЫБРАТЬ': 'FIRE - SELECT', 'ОГОНЬ-ВЫБОР  СПЕЦ-ВЫЙТИ': 'FIRE-PICK  SPEC-LEAVE',
+  'ВЛЕВО/ВПРАВО - ТАНК   СПЕЦ - ОТМЕНА   ESC - НАЗАД': 'LEFT/RIGHT - TANK   SPECIAL - CANCEL   ESC - BACK',
+  'ESC - НАЗАД': 'ESC - BACK',
+  // игра
+  'СЕКТОР': 'SECTOR', 'Ц': 'L', 'БИОМ:': 'BIOME:', '!! БОСС !!': '!! BOSS !!',
+  'МОДИФИКАТОР:': 'MODIFIER:', 'НАГРАДА: +1 КАРТА УЛУЧШЕНИЯ': 'REWARD: +1 UPGRADE CARD',
+  'УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ:': 'DESTROY ALL ENEMIES:',
+  'ОГОНЬ - СТРЕЛЯТЬ   СПЕЦ - СПЕЦПРИЁМ': 'FIRE - SHOOT   SPECIAL - ABILITY',
+  'WASD/СТРЕЛКИ  ПРОБЕЛ - ОГОНЬ  E - СПЕЦПРИЁМ': 'WASD/ARROWS  SPACE - FIRE  E - SPECIAL',
+  'ESC ПАУЗА  M МУЗЫКА': 'ESC PAUSE  M MUSIC', 'ПОДБИТ! ПОМОГИ': 'DOWN! HELP', 'ПОДБИТ!': 'DOWN!',
+  'ВНИМАНИЕ!': 'WARNING!', 'ВРАГИ ЗАМОРОЖЕНЫ': 'ENEMIES FROZEN',
+  'СЕКТОР ЗАЧИЩЕН!': 'SECTOR CLEAR!', 'УБИТО:': 'KILLS:', 'ПОЛНЫЙ РЕМОНТ': 'FULL REPAIR', '+1 ПРОЧНОСТЬ': '+1 ARMOR',
+  'ОГОНЬ - ДАЛЕЕ': 'FIRE - NEXT',
+  'ПАУЗА': 'PAUSE', 'ПРОДОЛЖИТЬ': 'CONTINUE', 'ВЫЙТИ В МЕНЮ': 'QUIT TO MENU',
+  'M - МУЗЫКА:': 'M - MUSIC:', 'ВКЛ': 'ON', 'ВЫКЛ': 'OFF',
+  'ВЫБЕРИТЕ УЛУЧШЕНИЕ': 'CHOOSE AN UPGRADE', 'ПРОЙДЕН': 'CLEARED', '- РЕДКИЕ НАГРАДЫ!': '- RARE REWARDS!',
+  'КАЖДЫЙ СВОИМ УСТРОЙСТВОМ: ВЛЕВО/ВПРАВО - ВЫБОР, ОГОНЬ - ВЗЯТЬ': 'EACH ON OWN DEVICE: LEFT/RIGHT - CHOOSE, FIRE - TAKE',
+  '←/→ ВЫБОР   ПРОБЕЛ/ENTER - ВЗЯТЬ': '←/→ CHOOSE   SPACE/ENTER - TAKE',
+  'ЛЕГЕНДАРНОЕ': 'LEGENDARY', 'СИСТЕМА': 'SYSTEM', 'РЕДКОЕ': 'RARE', 'ОБЫЧНОЕ': 'COMMON',
+  'СИНЕРГИЯ!': 'SYNERGY!', 'В СИНЕРГИИ': 'IN SYNERGY', 'ВЗЯТО': 'TAKEN',
+  'МАКС.': 'MAX', 'НЕТ ЧАСТЕЙ': 'NO PARTS', 'НЕТ СЛОТА': 'NO SLOT',
+  'В СТРОЮ!': 'BACK IN!', 'ОРУЖИЕ УР.': 'WEAPON LV.',
+  'КОНЕЦ': 'GAME OVER', 'ЗАБЕГ ОКОНЧЕН НА СЕКТОРЕ': 'RUN ENDED AT SECTOR', 'ОГОНЬ - В МЕНЮ': 'FIRE - MENU',
+  'ОБЩИЙ СЧЁТ:': 'TOTAL SCORE:', 'ВРЕМЯ:': 'TIME:', 'НОВЫЙ РЕКОРД!': 'NEW RECORD!',
+  'ПОБЕДА!': 'VICTORY!', 'ЦИТАДЕЛЬ ОМЕГА УНИЧТОЖЕНА': 'OMEGA CITADEL DESTROYED', 'ЦИКЛ': 'LOOP',
+  'ОГОНЬ - НОВЫЙ ЦИКЛ (ВРАГИ СИЛЬНЕЕ)': 'FIRE - NEW LOOP (STRONGER ENEMIES)', 'ESC - В МЕНЮ': 'ESC - MENU',
+  // устройства
+  'СТРЕЛКИ': 'ARROWS', 'ГЕЙМПАД': 'GAMEPAD', 'ЛЮБОЕ': 'ANY',
+  // биомы
+  'ПОЛЯ': 'FIELDS', 'ТУНДРА': 'TUNDRA', 'ПУСТОШЬ': 'WASTELAND', 'ЗАВОД': 'FACTORY',
+  // боссы
+  'ГОЛИАФ': 'GOLIATH', 'СТРЕКОЗА': 'DRAGONFLY', 'СКОЛОПЕНДРА': 'CENTIPEDE', 'ЦИТАДЕЛЬ ОМЕГА': 'OMEGA CITADEL',
+  'ГОЛИАФ В ЯРОСТИ!': 'GOLIATH IS ENRAGED!', 'СТРЕКОЗА: ФОРСАЖ!': 'DRAGONFLY: AFTERBURNER!',
+  'СКОЛОПЕНДРА ЗАРЫВАЕТСЯ!': 'CENTIPEDE BURROWS!', 'ОМЕГА: КРИТИЧЕСКИЙ РЕЖИМ!': 'OMEGA: CRITICAL MODE!',
+  'ЩИТ ЯДРА ОТКЛЮЧЁН!': 'CORE SHIELD DOWN!',
+  // классы
+  'ШТУРМОВИК': 'ASSAULT', 'РАЗВЕДЧИК': 'SCOUT', 'ТЯЖЁЛЫЙ': 'HEAVY',
+  'ЗАЛП': 'VOLLEY', '16 СНАРЯДОВ ВО ВСЕ СТОРОНЫ': '16 SHELLS IN ALL DIRECTIONS',
+  'РЫВОК': 'DASH', 'НЕУЯЗВИМЫЙ ТАРАН ВПЕРЁД': 'INVULNERABLE RAM FORWARD',
+  'ЩИТ': 'SHIELD', 'НА 3 СЕК. ОТРАЖАЕТ СНАРЯДЫ': 'REFLECTS SHELLS FOR 3 SEC',
+  // враги
+  'ЛЁГКИЙ': 'LIGHT', 'БЫСТРЫЙ': 'FAST', 'СНАЙПЕР': 'SNIPER', 'БРОНЯ': 'ARMOR', 'ДРОБОВИК': 'SHOTGUN',
+  'МИНОМЁТ': 'MORTAR', 'КАМИКАДЗЕ': 'KAMIKAZE',
+  // бонусы
+  'КАСКА': 'HELMET', 'ЧАСЫ': 'CLOCK', 'ГРАНАТА': 'GRENADE', 'ЗВЕЗДА': 'STAR', 'РЕМОНТ': 'REPAIR',
+  // модификаторы
+  'БРОНЕКОЛОННА': 'ARMORED COLUMN', 'ВРАГИ ПОЛУЧАЮТ +1 ПРОЧНОСТЬ': 'ENEMIES GET +1 ARMOR',
+  'БЛИЦКРИГ': 'BLITZKRIEG', 'ВРАГИ БЫСТРЕЕ И ЧАЩЕ СТРЕЛЯЮТ': 'ENEMIES ARE FASTER AND SHOOT MORE',
+  'ТУМАН ВОЙНЫ': 'FOG OF WAR', 'ВИДИМОСТЬ ОГРАНИЧЕНА': 'LIMITED VISIBILITY',
+  'АРТОБСТРЕЛ': 'BARRAGE', 'ПО ПОЛЮ БЬЁТ ВРАЖЕСКАЯ АРТИЛЛЕРИЯ': 'ENEMY ARTILLERY SHELLS THE FIELD',
+  'ТРОФЕИ': 'SPOILS', 'БОЛЬШЕ ВРАГОВ, НО И БОНУСОВ': 'MORE ENEMIES, BUT MORE BONUSES',
+  'ГОЛОЛЁД': 'BLACK ICE', 'ПОЛЕ СКОВАНО ЛЬДОМ': 'THE FIELD IS ICED OVER',
+  // улучшения
+  'СКОРОСТРЕЛ': 'RAPID FIRE', 'ПЕРЕЗАРЯДКА БЫСТРЕЕ НА 20%': 'RELOAD 20% FASTER',
+  'ДОП. ОБОЙМА': 'EXTRA CLIP', '+1 СНАРЯД НА ЭКРАНЕ': '+1 SHELL ON SCREEN',
+  'УСКОРИТЕЛЬ': 'ACCELERATOR', 'СНАРЯДЫ ЛЕТЯТ НА 30% БЫСТРЕЕ': 'SHELLS FLY 30% FASTER',
+  'ДОП. БРОНЯ': 'EXTRA ARMOR', '+1 К МАКС. ПРОЧНОСТИ': '+1 MAX ARMOR',
+  'КАПРЕМОНТ': 'OVERHAUL', 'ПОЛНОСТЬЮ ВОССТАНОВИТЬ ПРОЧНОСТЬ': 'FULLY RESTORE ARMOR',
+  'ТУРБОМОТОР': 'TURBO ENGINE', 'СКОРОСТЬ ХОДА +15%': 'MOVE SPEED +15%',
+  'ТАКТИКА': 'TACTICS', 'СПЕЦПРИЁМ ПЕРЕЗАРЯЖАЕТСЯ НА 30% БЫСТРЕЕ': 'SPECIAL RECHARGES 30% FASTER',
+  'УДАЧА': 'LUCK', 'БОНУСЫ ИЗ ВРАГОВ ВЫПАДАЮТ ВДВОЕ ЧАЩЕ': 'ENEMIES DROP BONUSES TWICE AS OFTEN',
+  'ПОЛЕВОЙ РЕМОНТ': 'FIELD REPAIR', '+1 ПРОЧНОСТЬ ПОСЛЕ КАЖДОГО СЕКТОРА': '+1 ARMOR AFTER EACH SECTOR',
+  'КРУПНЫЙ КАЛИБР': 'BIG CALIBER', 'УРОН СНАРЯДОВ +1': 'SHELL DAMAGE +1',
+  'БРОНЕБОЙНЫЕ': 'ARMOR-PIERCING', 'СНАРЯДЫ РАЗРУШАЮТ СТАЛЬ': 'SHELLS DESTROY STEEL',
+  'РИКОШЕТ': 'RICOCHET', 'СНАРЯДЫ ОТСКАКИВАЮТ ОТ СТАЛИ И КРАЁВ': 'SHELLS BOUNCE OFF STEEL AND EDGES',
+  '+2 СНАРЯДА ВЕЕРОМ ПРИ КАЖДОМ ВЫСТРЕЛЕ': '+2 SHELLS IN A FAN WITH EACH SHOT',
+  'ПРОБИТИЕ': 'PIERCING', 'СНАРЯД ПРОШИВАЕТ +1 ЦЕЛЬ НАСКВОЗЬ': 'SHELL PIERCES +1 TARGET',
+  'ФУГАС': 'HIGH EXPLOSIVE', 'СНАРЯДЫ ВЗРЫВАЮТСЯ, ЗАДЕВАЯ СОСЕДЕЙ': 'SHELLS EXPLODE, HITTING NEARBY FOES',
+  'ЭНЕРГОЩИТ': 'ENERGY SHIELD', 'БЛОКИРУЕТ 1 ПОПАДАНИЕ. ЗАРЯД 15 СЕК': 'BLOCKS 1 HIT. RECHARGES IN 15 SEC',
+  'ТРОФЕЙНЫЙ РЕМОНТ': 'SALVAGE REPAIR', '+1 ПРОЧНОСТЬ ЗА КАЖДЫЕ 12 УБИЙСТВ': '+1 ARMOR PER 12 KILLS',
+  'ЗАЖИГАТЕЛЬНЫЕ': 'INCENDIARY', 'ЦЕЛЬ ГОРИТ 3 С: 1 УРОН В СЕКУНДУ': 'TARGET BURNS 3 S: 1 DAMAGE PER SECOND',
+  'КРИОСНАРЯДЫ': 'CRYO SHELLS', 'ЗАМЕДЛЯЮТ, 3 ПОПАДАНИЯ ПОДРЯД ЗАМОРАЖИВАЮТ': 'SLOW; 3 HITS IN A ROW FREEZE',
+  'ТЕСЛА-СНАРЯДЫ': 'TESLA SHELLS', 'МОЛНИЯ БЬЁТ ЕЩЁ 2 ВРАГОВ И ОГЛУШАЕТ': 'LIGHTNING HITS 2 MORE FOES AND STUNS',
+  'КОРРЕКТИРОВКА': 'TARGET MARK', 'ЦЕЛЬ 4 С ПОЛУЧАЕТ +50% УРОНА ОТ ВСЕХ': 'TARGET TAKES +50% DAMAGE FOR 4 S',
+  'ПУЛЕМЁТНАЯ ТУРЕЛЬ': 'MACHINE GUN TURRET', 'САМА БЬЁТ ОЧЕРЕДЯМИ ПО БЛИЖАЙШЕМУ ВРАГУ': 'AUTO-FIRES BURSTS AT THE NEAREST FOE',
+  'МИННЫЙ УКЛАДЧИК': 'MINE LAYER', 'ОСТАВЛЯЕТ МИНЫ ПОЗАДИ ТАНКА': 'DROPS MINES BEHIND THE TANK',
+  'РАКЕТНАЯ УСТАНОВКА': 'ROCKET POD', 'РАЗ В 4 С ЗАЛП РАКЕТ С НАВЕДЕНИЕМ': 'HOMING ROCKET SALVO EVERY 4 S',
+  'ТЕСЛА-КАТУШКА': 'TESLA COIL', 'МОЛНИЕЙ БЬЁТ И ОГЛУШАЕТ ВРАГОВ РЯДОМ': 'ZAPS AND STUNS NEARBY FOES',
+  'ДРОН': 'DRONE', 'КРУЖИТ РЯДОМ И СТРЕЛЯЕТ ПО ВРАГАМ': 'ORBITS YOU AND SHOOTS AT FOES',
+  'ОТВАЛ-ТАРАН': 'RAM BLADE', 'УРОН ПРИ НАЕЗДЕ, ОТБРАСЫВАЕТ ВРАГОВ': 'DAMAGES ON CONTACT, KNOCKS FOES BACK',
+  'НАПАЛМ': 'NAPALM', 'ВАШИ ВЗРЫВЫ ОСТАВЛЯЮТ ГОРЯЩУЮ ЗЕМЛЮ': 'YOUR EXPLOSIONS LEAVE BURNING GROUND',
+  'ТЕРМОШОК': 'THERMAL SHOCK', 'ОГОНЬ ПО ЗАМОРОЖЕННОМУ - ТРОЙНОЙ УРОН': 'FIRE ON FROZEN FOES DEALS TRIPLE DAMAGE',
+  'ЛЕДЯНОЙ РАСКОЛ': 'ICE SHATTER', 'ЗАМОРОЖЕННЫЙ ОТ ВЗРЫВА РАЗЛЕТАЕТСЯ ОСКОЛКАМИ': 'FROZEN FOES SHATTER INTO SHARDS WHEN BLASTED',
+  'ШАРОВАЯ МОЛНИЯ': 'BALL LIGHTNING', 'КАЖДЫЙ РИКОШЕТ БЬЁТ МОЛНИЕЙ': 'EVERY RICOCHET THROWS LIGHTNING',
+  'РЕЛЬСОТРОН': 'RAILGUN', '+2 ПРОБИТИЯ, СНАРЯДЫ В 1.5 РАЗА БЫСТРЕЕ': '+2 PIERCE, SHELLS 1.5X FASTER',
+  'ШРАПНЕЛЬНЫЙ ШТОРМ': 'SHRAPNEL STORM', '5 ДРОБИН ВМЕСТО 3 И +1 РИКОШЕТ': '5 PELLETS INSTEAD OF 3 AND +1 RICOCHET',
+  'КОРРЕКТИРОВЩИК': 'SPOTTER', 'РАКЕТЫ ЛЕТЯТ В ПОМЕЧЕННЫХ, УРОН ×1.5': 'ROCKETS SEEK MARKED FOES, DAMAGE ×1.5',
+  'ДЕТОНАТОР': 'DETONATOR', 'ВЗРЫВЫ ПОДРЫВАЮТ ВАШИ МИНЫ, МИНЫ ×1.5': 'EXPLOSIONS SET OFF YOUR MINES, MINES ×1.5',
+  'МИННЫЙ СЛЕД': 'MINE TRAIL', 'РЫВОК ОСТАВЛЯЕТ ЦЕПОЧКУ МИН': 'DASH LEAVES A CHAIN OF MINES',
+  'ВЗРЫВНОЕ ОТРАЖЕНИЕ': 'BLAST REFLECT', 'ОТРАЖЁННЫЕ ЩИТОМ СНАРЯДЫ ВЗРЫВАЮТСЯ': 'SHELLS REFLECTED BY THE SHIELD EXPLODE',
+  'СТАЛЬНОЙ ШТОРМ': 'STEEL STORM', 'ЗАЛП ЛОМАЕТ СТАЛЬ И ПРОШИВАЕТ ВРАГОВ': 'VOLLEY BREAKS STEEL AND PIERCES FOES',
+  'РАЗРЯДНИК': 'DISCHARGER', 'БЛОК ЭНЕРГОЩИТОМ ВЫЗЫВАЕТ ЭМИ-ВОЛНУ': 'ENERGY SHIELD BLOCK RELEASES AN EMP WAVE',
+  'БУЛЬДОЗЕР': 'BULLDOZER', 'ТАНК ПРОЛАМЫВАЕТ КИРПИЧ НАЕЗДОМ': 'TANK SMASHES THROUGH BRICK',
+  'ОСКОЛКИ': 'SHARDS', 'РАЗБИТЫЙ КИРПИЧ РАНИТ ВРАГОВ ОСКОЛКАМИ': 'BROKEN BRICK HITS FOES WITH SHARDS',
+  'ОТВЕТНЫЙ ОГОНЬ': 'RETALIATION', 'ПОЛУЧИВ УРОН, ВЫПУСКАЕТ 8 СНАРЯДОВ': 'WHEN HIT, FIRES 8 SHELLS',
+  'ВЫЖИДАНИЕ': 'PATIENCE', 'ПОСЛЕ 1.5 С БЕЗ ВЫСТРЕЛОВ СНАРЯД ×3 И НАСКВОЗЬ': 'AFTER 1.5 S WITHOUT FIRING: SHELL ×3 AND PIERCING',
+};
+if (LANG === 'en') setLang('en');

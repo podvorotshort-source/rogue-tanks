@@ -613,7 +613,7 @@ class Enemy extends Tank {
     super(x, y, 2);
     const T = ENEMY_TYPES[type];
     this.type = type; this.cfg = T; this.shape = T.shape; this.pal = T.pal;
-    this.hp = this.maxHp = T.hp + (mods.hp || 0);
+    this.hp = this.maxHp = Math.round((T.hp + (mods.hp || 0)) * (mods.hpMul || 1));
     this.speed = T.speed * mods.speed; this.fireMul = mods.fire; this.hunt = mods.hunt;
     this.bspeed = T.bspeed * (1 + 0.1 * (mods.loop || 0));
     this.maxB = (type === 'power' && mods.depth >= 8) ? 2 : 1;
@@ -854,7 +854,7 @@ class Pickup {
         for (const q of G.players) {
           if (q.weapon >= MAX_WEAPON) continue;
           q.weapon++; q.recalc(); upgraded = true;
-          G.popups.push(new Popup(q.cx, q.y - 6, 'ОРУЖИЕ УР.' + q.weapon, q.color, 1.4));
+          G.popups.push(new Popup(q.cx, q.y - 6, tr('ОРУЖИЕ УР.') + q.weapon, q.color, 1.4));
         }
         if (upgraded) msg = null; else { p.score += 1000; msg = '+1000'; }
         break;

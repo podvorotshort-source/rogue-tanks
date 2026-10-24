@@ -125,7 +125,7 @@ function padName(p) {
   if (/0ce6|0df2|dualsense/.test(id)) return 'DUALSENSE';
   if (/05c4|09cc|0ba0|dualshock/.test(id)) return 'DUALSHOCK 4';
   if (/xbox|xinput|045e/.test(id)) return 'XBOX';
-  return 'ГЕЙМПАД';
+  return tr('ГЕЙМПАД');
 }
 const PREVENT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter', 'Tab', 'Backspace', 'NumpadEnter']);
 addEventListener('keydown', e => {
@@ -150,7 +150,7 @@ for (let i = 0; i < MAX_PADS; i++) {
   const P = 'Pad' + i;
   DEVICES.push({ pad: i, name: 'ГЕЙМПАД ' + (i + 1), up: [P + 'Up'], down: [P + 'Down'], left: [P + 'Left'], right: [P + 'Right'], fire: [P + 'A'], special: [P + 'B'] });
 }
-const devName = d => (d.pad != null && Input.pads[d.pad]) ? padName(Input.pads[d.pad]) : d.name;
+const devName = d => (d.pad != null && Input.pads[d.pad]) ? padName(Input.pads[d.pad]) : d.pad != null ? tr('ГЕЙМПАД') + ' ' + (d.pad + 1) : tr(d.name);
 // все устройства разом: одиночная игра и меню
 const ALL_CTRL = { name: 'ЛЮБОЕ' };
 for (const k of ['up', 'down', 'left', 'right', 'fire', 'special']) ALL_CTRL[k] = DEVICES.flatMap(d => d[k]);
@@ -396,7 +396,7 @@ function glyph(ch, color) {
 }
 const textWidth = (s, scale = 1) => { s = String(s); return s.length ? (s.length * 6 - 1) * scale : 0; };
 function text(s, x, y, color = '#fcfcfc', scale = 1, align = 'left', shadow = null, g = ctx) {
-  s = String(s).toUpperCase();
+  s = tr(String(s)).toUpperCase();
   const w = textWidth(s, scale);
   if (align === 'center') x = Math.round(x - w / 2); else if (align === 'right') x = Math.round(x - w);
   if (shadow) text(s, x + scale, y + scale, shadow, scale, 'left', null, g);
@@ -409,7 +409,7 @@ function text(s, x, y, color = '#fcfcfc', scale = 1, align = 'left', shadow = nu
 }
 function wrap(s, maxChars) {
   const lines = []; let cur = '';
-  for (const w of String(s).split(' ')) {
+  for (const w of tr(String(s)).split(' ')) {
     if (!cur) cur = w;
     else if ((cur + ' ' + w).length <= maxChars) cur += ' ' + w;
     else { lines.push(cur); cur = w; }

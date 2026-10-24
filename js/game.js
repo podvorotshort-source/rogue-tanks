@@ -123,11 +123,40 @@ function findFreeSpot(x, y) {
   return null;
 }
 
+// случайная свободная точка поля подальше от игроков: враги появляются не только у верхнего края
+function randomSpawnSpot() {
+  const alive = G.players.filter(p => !p.dead);
+  for (let k = 0; k < 40; k++) {
+    const bx = randi(0, BCOLS - 1), by = randi(0, BROWS - 1), x = bx * BLK, y = by * BLK;
+    if (G.level.tankBlocked(x, y, 16, 16)) continue;
+    if (alive.some(p => dist(p.cx, p.cy, x + 8, y + 8) < 110)) continue;
+    if (G.flow && !G.flow.some(f => f && f[by * BCOLS + bx] >= 0)) continue; // замкнутый карман
+    if (G.tanks.some(t => overlap(t.x, t.y, 16, 16, x, y, 16, 16))) continue;
+    if (G.spawners.some(s => overlap(s.x, s.y, 16, 16, x, y, 16, 16))) continue;
+    return { x, y };
+  }
+  return null;
+}
+function classicSpawnSpot() {
+  const free = G.level.spawns.filter(([bx, by]) =>
+    !G.tanks.some(t => overlap(t.x, t.y, 16, 16, bx * BLK, by * BLK, 16, 16)) && !G.spawners.some(s => s.x === bx * BLK && s.y === by * BLK));
+  if (!free.length) return null;
+  const [bx, by] = pick(free);
+  return { x: bx * BLK, y: by * BLK };
+}
+
+// сила команды: средняя сумма уровней улучшений и оружия (капремонт не в счёт) — по ней крепчают враги и боссы
+function teamPower() {
+  const ps = G.players;
+  if (!ps.length) return 0;
+  return ps.reduce((a, p) => a + p.weapon + Object.keys(p.perks).reduce((s, k) => s + (k === 'repair' ? 0 : p.perks[k]), 0), 0) / ps.length;
+}
+
 function sectorInfo(depth) {
   const d = depth - 1;
   return { biome: Math.floor(d / 4) % 4, stage: d % 4 + 1, loop: Math.floor(d / 16), boss: d % 4 === 3, final: d % 16 === 15 };
 }
-function sectorName(depth) { const s = sectorInfo(depth); return (s.loop ? 'Ц' + (s.loop + 1) + ' ' : '') + (s.biome + 1) + '-' + s.stage; }
+function sectorName(depth) { const s = sectorInfo(depth); return (s.loop ? tr('Ц') + (s.loop + 1) + ' ' : '') + (s.biome + 1) + '-' + s.stage; }
 
 function enemyPool(d) {
   return {
@@ -182,8 +211,10 @@ function startSector() {
   G.mines = []; G.fires = new Map(); G.timers = [];
   G.boss = null; G.freeze = 0; G.shake = 0; G.flashT = 0; G.bannerT = 0; G.killedCount = 0; G.flowT = 0; G.barrageT = 3;
   G.gameOverT = 0; G.bossDeadT = 0; G.paused = false; G.flow = null;
+  const power = teamPower(), firstBoss = info.boss && info.biome === 0; // первый босс и его свита — без усиления
   G.enemyMods = {
-    hp: (mod === 'armored' ? 1 : 0) + L,
+    hp: (mod === 'armored' ? 1 : 0) + L + (firstBoss ? 0 : Math.floor(d / 6)),
+    hpMul: firstBoss ? 1 : 1 + 0.04 * power,
     speed: (1 + 0.02 * d + 0.1 * L) * (mod === 'blitz' ? 1.35 : 1),
     fire: (1 + 0.04 * d + 0.2 * L) * (mod === 'blitz' ? 1.25 : 1),
     hunt: Math.min(0.7, 0.12 + 0.035 * d + 0.1 * L), loop: L, depth: d,
@@ -206,7 +237,8 @@ function startSector() {
     G.spawnT = 0.5;
   } else {
     G.total = 0;
-    G.boss = makeBoss(info.biome, (1 + 0.6 * extra) * (1 + 0.5 * L));
+    const tough = info.biome === 0 ? 1 : 1.5 * (1 + 0.04 * power);
+    G.boss = makeBoss(info.biome, (1 + 0.6 * extra) * (1 + 0.5 * L) * tough);
   }
   G.tanks = G.players.slice();
   G.state = 'intro'; G.introT = 0;
@@ -288,14 +320,18 @@ function update(dt) {
 
 function toTitle() { G.state = 'title'; G.menuSel = 0; Music.play('title'); Sound.play('select'); }
 
-const MENU = ['1 ИГРОК', '2 ИГРОКА', '3 ИГРОКА', 'УПРАВЛЕНИЕ'];
+const MENU = ['1 ИГРОК', '2 ИГРОКА', '3 ИГРОКА', 'УПРАВЛЕНИЕ', 'ЯЗЫК: РУССКИЙ']; // последний пункт — переключатель языка
+const MENU_HELP = 3, MENU_LANG = 4;
 function updateTitle() {
   Music.play('title');
   if (anyCtrl('up')) { G.menuSel = (G.menuSel + MENU.length - 1) % MENU.length; Sound.play('select'); }
   if (anyCtrl('down')) { G.menuSel = (G.menuSel + 1) % MENU.length; Sound.play('select'); }
+  if (G.menuSel === MENU_LANG && (anyCtrl('fire') || anyCtrl('left') || anyCtrl('right'))) {
+    setLang(LANG === 'ru' ? 'en' : 'ru'); Sound.play('confirm'); return;
+  }
   if (anyCtrl('fire')) {
     Sound.play('confirm');
-    if (G.menuSel === MENU.length - 1) { G.state = 'help'; return; }
+    if (G.menuSel === MENU_HELP) { G.state = 'help'; return; }
     G.nPlayers = G.menuSel + 1;
     // слоты игроков: dev — индекс в DEVICES (null — ещё никто не вошёл), в одиночной игре сразу «любое устройство»
     G.sel = { slots: Array.from({ length: G.nPlayers }, () => ({ dev: G.nPlayers === 1 ? 'all' : null, cls: 0, ready: false, t: 1 })), t: 0, goT: 0 };
@@ -336,7 +372,7 @@ function updateIntro(dt) {
   updateFx(dt);
   if (G.introT >= 2.4) {
     G.state = 'play';
-    if (G.boss) { G.banner('ВНИМАНИЕ! ' + G.boss.name, '#f83800'); Sound.play('warn'); }
+    if (G.boss) { G.banner(tr('ВНИМАНИЕ!') + ' ' + tr(G.boss.name), '#f83800'); Sound.play('warn'); }
   }
 }
 
@@ -372,11 +408,10 @@ function updatePlay(dt) {
     G.spawnT -= dt;
     const alive = G.enemies.length + G.spawners.length;
     if (G.spawnT <= 0 && alive < G.maxAlive) {
-      const free = G.level.spawns.filter(([bx, by]) =>
-        !G.tanks.some(t => overlap(t.x, t.y, 16, 16, bx * BLK, by * BLK, 16, 16)) && !G.spawners.some(s => s.x === bx * BLK && s.y === by * BLK));
-      if (free.length) {
-        const [bx, by] = pick(free), q = G.queue.shift();
-        G.spawners.push(new Spawner(bx * BLK, by * BLK, q.type, q.bonus));
+      const s = (Math.random() < 0.65 && randomSpawnSpot()) || classicSpawnSpot();
+      if (s) {
+        const q = G.queue.shift();
+        G.spawners.push(new Spawner(s.x, s.y, q.type, q.bonus));
         G.spawnT = G.spawnInt;
       }
     }
@@ -519,7 +554,7 @@ function drawWorld() {
     ctx.globalAlpha = 0.7; rect(ctx, 0, HUD_H + 100, W, 26, '#000'); ctx.globalAlpha = 1;
     if (Math.floor(G.bannerT * 6) % 2 || G.bannerT < 1.2) text(G.bannerText, W / 2, HUD_H + 106, G.bannerCol, 2, 'center', '#000');
   }
-  if (G.freeze > 0 && G.state === 'play') text('ВРАГИ ЗАМОРОЖЕНЫ ' + Math.ceil(G.freeze), W / 2, H - 10, '#3cbcfc', 1, 'center', '#000');
+  if (G.freeze > 0 && G.state === 'play') text(tr('ВРАГИ ЗАМОРОЖЕНЫ') + ' ' + Math.ceil(G.freeze), W / 2, H - 10, '#3cbcfc', 1, 'center', '#000');
 }
 
 function drawFog(g) {
@@ -552,7 +587,7 @@ function drawHUD() {
     rect(ctx, bx - 1, 9, bw + 2, 5, '#3c0000');
     rect(ctx, bx, 10, Math.round(bw * Math.max(0, b.hp) / b.maxHp), 3, b.flash > 0 ? '#fcfcfc' : '#f83800');
   } else {
-    text('СЕКТОР ' + sectorName(G.depth), cx, 1, '#fcfcfc', 1, 'center');
+    text(tr('СЕКТОР') + ' ' + sectorName(G.depth), cx, 1, '#fcfcfc', 1, 'center');
     const left = G.queue.length + G.spawners.length + G.enemies.length;
     ctx.drawImage(TankGfx.get('basic', 'basic')[0][0], 0, 0, 16, 16, cx - 26, 8, 7, 7);
     text('× ' + left, cx - 16, 8, '#a8a8a8');
@@ -589,17 +624,17 @@ function drawIntro() {
   rect(ctx, 0, HUD_H + FH - hh, W, hh, '#636363');
   if (open > 0) return;
   const info = G.info, cy = HUD_H + FH / 2;
-  text('СЕКТОР ' + sectorName(G.depth), W / 2, cy - 44, '#000', 3, 'center');
-  text('БИОМ: ' + BIOMES[info.biome].name, W / 2, cy - 14, '#1c1c1c', 1, 'center');
+  text(tr('СЕКТОР') + ' ' + sectorName(G.depth), W / 2, cy - 44, '#000', 3, 'center');
+  text(tr('БИОМ:') + ' ' + tr(BIOMES[info.biome].name), W / 2, cy - 14, '#1c1c1c', 1, 'center');
   if (info.boss) {
     text('!! БОСС !!', W / 2, cy + 2, blink(6) ? '#a00000' : '#000', 2, 'center');
     text(G.boss.name, W / 2, cy + 22, '#000', 1, 'center');
   } else if (G.mod) {
-    text('МОДИФИКАТОР: ' + G.mod.name, W / 2, cy + 2, '#801000', 1, 'center');
+    text(tr('МОДИФИКАТОР:') + ' ' + tr(G.mod.name), W / 2, cy + 2, '#801000', 1, 'center');
     text(G.mod.desc, W / 2, cy + 12, '#000', 1, 'center');
     text('НАГРАДА: +1 КАРТА УЛУЧШЕНИЯ', W / 2, cy + 22, '#003c00', 1, 'center');
   } else {
-    text('УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ: ' + G.total, W / 2, cy + 2, '#000', 1, 'center');
+    text(tr('УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ:') + ' ' + G.total, W / 2, cy + 2, '#000', 1, 'center');
   }
   if (G.depth === 1) {
     if (G.players.length > 1) {
@@ -614,9 +649,9 @@ function drawClear() {
   text('СЕКТОР ЗАЧИЩЕН!', W / 2, HUD_H + 70, '#fcd820', 2, 'center', '#7c4000');
   G.players.forEach((p, i) => {
     const y = HUD_H + 98 + i * 14;
-    text(p.label + '  ' + CLASSES[p.cls].name, 70, y, p.color);
-    text('УБИТО: ' + p.kills, 200, y, '#fcfcfc');
-    text('ОЧКИ: ' + p.score, 280, y, '#fcfcfc');
+    text(p.label + '  ' + tr(CLASSES[p.cls].name), 70, y, p.color);
+    text(tr('УБИТО:') + ' ' + p.kills, 200, y, '#fcfcfc');
+    text(tr('ОЧКИ:') + ' ' + p.score, 280, y, '#fcfcfc');
   });
   text(G.healMsg, W / 2, HUD_H + 134, '#f83838', 1, 'center');
   if (G.clearT > 1.2 && blink(3)) text('ОГОНЬ - ДАЛЕЕ', W / 2, HUD_H + 152, '#7c7c7c', 1, 'center');
@@ -630,14 +665,14 @@ function drawPause() {
     text(s, W / 2, y, G.pauseSel === i ? '#fcd820' : '#7c7c7c', 1, 'center');
     if (G.pauseSel === i) ctx.drawImage(TankGfx.get('std', 'p1')[Math.floor(G.time * 8) % 2][1], W / 2 - 60, y - 4);
   });
-  text('M - МУЗЫКА: ' + (Sound.musicOn ? 'ВКЛ' : 'ВЫКЛ'), W / 2, 176, '#545454', 1, 'center');
+  text(tr('M - МУЗЫКА:') + ' ' + tr(Sound.musicOn ? 'ВКЛ' : 'ВЫКЛ'), W / 2, 176, '#545454', 1, 'center');
 }
 
 function drawPerk() {
   const P = G.perk;
   rect(ctx, 0, 0, W, H, '#06060c');
   text('ВЫБЕРИТЕ УЛУЧШЕНИЕ', W / 2, 8, '#fcd820', 2, 'center', '#5c3c00');
-  text('СЕКТОР ' + sectorName(G.depth) + ' ПРОЙДЕН' + (G.info.boss ? ' - РЕДКИЕ НАГРАДЫ!' : ''), W / 2, 27, '#7c7c7c', 1, 'center');
+  text(tr('СЕКТОР') + ' ' + sectorName(G.depth) + ' ' + tr('ПРОЙДЕН') + (G.info.boss ? ' ' + tr('- РЕДКИЕ НАГРАДЫ!') : ''), W / 2, 27, '#7c7c7c', 1, 'center');
   const n = P.cards.length, gap = 6, cw = Math.floor((W - 24 - gap * (n - 1)) / n), ch = 160, y0 = 46;
   for (let i = 0; i < n; i++) drawCard(P, i, 12 + i * (cw + gap), y0, cw, ch);
   text(G.players.length > 1 ? 'КАЖДЫЙ СВОИМ УСТРОЙСТВОМ: ВЛЕВО/ВПРАВО - ВЫБОР, ОГОНЬ - ВЗЯТЬ' : '←/→ ВЫБОР   ПРОБЕЛ/ENTER - ВЗЯТЬ',
@@ -680,7 +715,7 @@ function drawCard(P, i, x, y, w, h) {
       const c = p.color, done = P.done[pi], why = cantReason(p, id);
       if (!done || blink(4)) { frame(x - 2 - pi, y - 2 - pi, w + 4 + pi * 2, h + 4 + pi * 2, c); }
       const ty = pi === 0 ? y - 10 : y + h + 4 + (pi - 1) * 9; // 1P над картой, 2P и 3P под ней
-      text(p.label + (done ? ' ВЗЯТО' : why ? ' ' + why : ''), x + w / 2, ty, c, 1, 'center');
+      text(p.label + (done ? ' ' + tr('ВЗЯТО') : why ? ' ' + tr(why) : ''), x + w / 2, ty, c, 1, 'center');
     }
     if (have) text(p.label + '×' + have, [x + 4, x + w - 4, x + w / 2][pi], y + h - 24, p.color, 1, ['left', 'right', 'center'][pi]);
   });
@@ -688,7 +723,7 @@ function drawCard(P, i, x, y, w, h) {
 
 function drawBrickText(s, cx, y, scale) {
   if (!brickPattern) brickPattern = ctx.createPattern(getTiles(0).brick, 'repeat');
-  s = s.toUpperCase();
+  s = tr(s).toUpperCase();
   const x0 = Math.round(cx - textWidth(s, scale) / 2);
   ctx.fillStyle = brickPattern;
   for (let i = 0; i < s.length; i++) {
@@ -702,14 +737,14 @@ function drawTitle() {
   drawBrickText('ТАНКИ', W / 2, 22, 8);
   text('8-БИТНЫЙ РОГАЛИК', W / 2, 88, '#fcd820', 2, 'center', '#7c4000');
   MENU.forEach((s, i) => {
-    const y = 112 + i * 12, sel = G.menuSel === i;
+    const y = 108 + i * 11, sel = G.menuSel === i;
     text(s, W / 2 - 40, y, sel ? '#fcfcfc' : '#7c7c7c');
     if (sel) ctx.drawImage(TankGfx.get('std', 'p1')[Math.floor(G.time * 8) % 2][1], W / 2 - 62, y - 4);
   });
   const pads = Input.pads;
-  text(pads.length ? 'ГЕЙМПАДЫ: ' + pads.map(padName).join(', ') : 'ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ',
+  text(pads.length ? tr('ГЕЙМПАДЫ:') + ' ' + pads.map(padName).join(', ') : 'ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ',
     W / 2, 166, pads.length ? '#7c7c7c' : '#3c3c3c', 1, 'center');
-  if (G.best.depth > 0) text('РЕКОРД: СЕКТОР ' + sectorName(G.best.depth) + '   ОЧКИ: ' + G.best.score, W / 2, 180, '#7c7c7c', 1, 'center');
+  if (G.best.depth > 0) text(tr('РЕКОРД: СЕКТОР') + ' ' + sectorName(G.best.depth) + '   ' + tr('ОЧКИ:') + ' ' + G.best.score, W / 2, 180, '#7c7c7c', 1, 'center');
   text('4 БИОМА  •  4 БОССА  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ', W / 2, 194, '#3c78a8', 1, 'center');
   if (!Sound.ac || Sound.ac.state !== 'running') text('ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ', W / 2, 4, '#545454', 1, 'center');
   // парад танков внизу
@@ -778,8 +813,8 @@ function drawSelect() {
       return;
     }
     const C = CLASSES[CLASS_LIST[sl.cls]];
-    text(label + (sl.dev === 'all' ? '' : ' - ' + devName(DEVICES[sl.dev])), cx, py + 6, col, 1, 'center');
-    text('<  ' + C.name + '  >', cx, py + 18, '#fcfcfc', 1, 'center');
+    text(tr(label) + (sl.dev === 'all' ? '' : ' - ' + devName(DEVICES[sl.dev])), cx, py + 6, col, 1, 'center');
+    text('<  ' + tr(C.name) + '  >', cx, py + 18, '#fcfcfc', 1, 'center');
     ctx.drawImage(TankGfx.get(C.shape, 'p' + (i + 1))[Math.floor(G.time * 6) % 2][0], cx - 24, py + 32, 48, 48);
     const labels = ['ПРОЧНОСТЬ', 'СКОРОСТЬ', narrow ? 'ОГОНЬ' : 'СКОРОСТРЕЛ.', 'УРОН'], bx = narrow ? 60 : 84, step = narrow ? 9 : 13;
     labels.forEach((l, k) => {
@@ -787,7 +822,7 @@ function drawSelect() {
       text(l, px + (narrow ? 5 : 8), y, '#8c8c8c');
       for (let j = 0; j < 6; j++) rect(ctx, px + bx + j * step, y, step - 2, 7, j < C.stats[k] ? col : '#202020');
     });
-    text((narrow ? 'СПЕЦ: ' : 'СПЕЦПРИЁМ: ') + C.sname, cx, py + 140, '#3cbcfc', 1, 'center');
+    text(tr(narrow ? 'СПЕЦ:' : 'СПЕЦПРИЁМ:') + ' ' + tr(C.sname), cx, py + 140, '#3cbcfc', 1, 'center');
     wrap(C.sdesc, Math.floor((pw - 8) / 6)).forEach((l, k) => text(l, cx, py + 151 + k * 9, '#8c8c8c', 1, 'center'));
     if (sl.ready) { if (blink(4)) text('ГОТОВ!', cx, py + 182, col, 1, 'center'); }
     else text(narrow || n === 1 ? 'ОГОНЬ - ВЫБРАТЬ' : 'ОГОНЬ-ВЫБОР  СПЕЦ-ВЫЙТИ', cx, py + 182, '#7c7c7c', 1, 'center');
@@ -798,18 +833,18 @@ function drawSelect() {
 function drawStats(y) {
   G.players.forEach((p, i) => {
     const yy = y + i * 14;
-    text(p.label + ' ' + CLASSES[p.cls].name, 60, yy, p.color);
-    text('УБИТО: ' + p.kills, 190, yy, '#fcfcfc');
-    text('ОЧКИ: ' + p.score, 270, yy, '#fcfcfc');
+    text(p.label + ' ' + tr(CLASSES[p.cls].name), 60, yy, p.color);
+    text(tr('УБИТО:') + ' ' + p.kills, 190, yy, '#fcfcfc');
+    text(tr('ОЧКИ:') + ' ' + p.score, 270, yy, '#fcfcfc');
   });
   const t = Math.floor(G.runTime || 0);
-  text('ОБЩИЙ СЧЁТ: ' + totalScore() + '    ВРЕМЯ: ' + Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'), W / 2, y + 36, '#bcbcbc', 1, 'center');
-  text(G.newRecord ? 'НОВЫЙ РЕКОРД!' : 'РЕКОРД: СЕКТОР ' + sectorName(G.best.depth) + '  ' + G.best.score, W / 2, y + 50, G.newRecord ? (blink(4) ? '#fcd820' : '#f83800') : '#7c7c7c', 1, 'center');
+  text(tr('ОБЩИЙ СЧЁТ:') + ' ' + totalScore() + '    ' + tr('ВРЕМЯ:') + ' ' + Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'), W / 2, y + 36, '#bcbcbc', 1, 'center');
+  text(G.newRecord ? 'НОВЫЙ РЕКОРД!' : tr('РЕКОРД: СЕКТОР') + ' ' + sectorName(G.best.depth) + '  ' + G.best.score, W / 2, y + 50, G.newRecord ? (blink(4) ? '#fcd820' : '#f83800') : '#7c7c7c', 1, 'center');
 }
 function drawGameOver() {
   drawBrickText('КОНЕЦ', W / 2, 30, 6);
-  text('ЗАБЕГ ОКОНЧЕН НА СЕКТОРЕ ' + sectorName(G.depth), W / 2, 90, '#f83800', 1, 'center');
-  text('БИОМ: ' + BIOMES[sectorInfo(G.depth).biome].name, W / 2, 102, '#7c7c7c', 1, 'center');
+  text(tr('ЗАБЕГ ОКОНЧЕН НА СЕКТОРЕ') + ' ' + sectorName(G.depth), W / 2, 90, '#f83800', 1, 'center');
+  text(tr('БИОМ:') + ' ' + tr(BIOMES[sectorInfo(G.depth).biome].name), W / 2, 102, '#7c7c7c', 1, 'center');
   drawStats(126);
   if (G.overT > 1.2 && blink(2)) text('ОГОНЬ - В МЕНЮ', W / 2, 220, '#fcfcfc', 1, 'center');
 }
@@ -817,7 +852,7 @@ function drawVictory() {
   for (let i = 0; i < 40; i++) { const x = (i * 97 + G.time * 20 * (1 + i % 3)) % W, y = (i * 53 + G.time * 30) % H; rect(ctx, x, y, 2, 2, ['#fcd820', '#f83800', '#3cbcfc', '#58d854'][i % 4]); }
   text('ПОБЕДА!', W / 2, 26, '#fcd820', 4, 'center', '#7c4000');
   text('ЦИТАДЕЛЬ ОМЕГА УНИЧТОЖЕНА', W / 2, 70, '#fcfcfc', 1, 'center');
-  text('ЦИКЛ ' + (sectorInfo(G.depth).loop + 1) + ' ПРОЙДЕН', W / 2, 82, '#7c7c7c', 1, 'center');
+  text(tr('ЦИКЛ') + ' ' + (sectorInfo(G.depth).loop + 1) + ' ' + tr('ПРОЙДЕН'), W / 2, 82, '#7c7c7c', 1, 'center');
   drawStats(108);
   if (G.overT > 1.5) {
     text('ОГОНЬ - НОВЫЙ ЦИКЛ (ВРАГИ СИЛЬНЕЕ)', W / 2, 206, blink(2) ? '#fcfcfc' : '#bcbcbc', 1, 'center');
