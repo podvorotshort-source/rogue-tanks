@@ -291,12 +291,17 @@ const Net = {
       document.body.appendChild(v);
       const fit = () => { v.style.width = canvas.style.width; v.style.height = canvas.style.height; };
       addEventListener('resize', () => setTimeout(fit, 0)); fit();
-      const unmute = () => { v.muted = false; v.play().catch(() => {}); };
-      for (const t of ['pointerdown', 'keydown', 'touchend']) addEventListener(t, unmute, { once: true, capture: true });
+      // iOS запускает видео со звуком только из касания (по его окончании) — пробуем на каждом,
+      // пока не заиграет со звуком; не разрешил звук — играем хотя бы без него
+      const kick = () => {
+        if (!v.paused && !v.muted) return;
+        v.muted = false;
+        v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
+      };
+      for (const t of ['touchend', 'click', 'keydown']) addEventListener(t, kick, { capture: true });
     }
     if (v.srcObject !== st) v.srcObject = st;
-    v.style.display = 'block';
-    v.play().catch(() => {});
+    v.play().catch(() => {}); // без звука автозапуск обычно разрешён
     this.status = '';
   },
   updateGuest(dt) {
@@ -316,6 +321,14 @@ const Net = {
       return;
     }
     if (!this.video && this.waitT - this.offerT > 25) this.fail('НЕ УДАЛОСЬ СОЕДИНИТЬСЯ С ХОСТОМ');
+    const v = this.video;
+    if (v) {
+      // на паузе видео прячем: вместо системной кнопки ▶ (её не нажать под экранными кнопками) — наша подсказка
+      v.style.display = v.paused ? 'none' : 'block';
+      this.status = v.paused ? 'КОСНИТЕСЬ ЭКРАНА, ЧТОБЫ ВКЛЮЧИТЬ КАРТИНКУ' : '';
+      this.playT = (this.playT || 0) - dt;
+      if (v.paused && this.playT <= 0) { this.playT = 1; v.muted = true; v.play().catch(() => {}); }
+    }
     if (!this.dc || this.dc.readyState !== 'open') return;
     const C = ALL_CTRL, keys = [C.up, C.down, C.left, C.right, C.fire, C.special, NET_START];
     let b = 0;
