@@ -3,7 +3,7 @@
 //  CORE: константы, утилиты, ввод, звук, музыка, пиксельный шрифт
 // ============================================================
 
-const BUILD = 3; // номер сборки: показывается в меню, совпадает с ?v= в index.html
+const BUILD = 5; // номер сборки: показывается в меню, совпадает с ?v= в index.html
 const W = 384, H = 256, HUD_H = 16;
 const CELL = 8, COLS = 48, ROWS = 30;          // игровое поле в клетках 8x8
 const FW = COLS * CELL, FH = ROWS * CELL;      // 384 x 240
@@ -154,13 +154,19 @@ for (let i = 0; i < MAX_PADS; i++) {
   const P = 'Pad' + i;
   DEVICES.push({ pad: i, name: 'ГЕЙМПАД ' + (i + 1), up: [P + 'Up'], down: [P + 'Down'], left: [P + 'Left'], right: [P + 'Right'], fire: [P + 'A'], special: [P + 'B'] });
 }
-const devName = d => (d.pad != null && Input.pads[d.pad]) ? padName(Input.pads[d.pad]) : d.pad != null ? tr('ГЕЙМПАД') + ' ' + (d.pad + 1) : tr(d.name);
-// все устройства разом: одиночная игра и меню
+const devName = d => d.net != null ? Net.guestName(d.net) : (d.pad != null && Input.pads[d.pad]) ? padName(Input.pads[d.pad]) : d.pad != null ? tr('ГЕЙМПАД') + ' ' + (d.pad + 1) : tr(d.name);
+// все местные устройства разом: одиночная игра и меню (онлайн-гости меню хоста не листают)
 const ALL_CTRL = { name: 'ЛЮБОЕ' };
 for (const k of ['up', 'down', 'left', 'right', 'fire', 'special']) ALL_CTRL[k] = DEVICES.flatMap(d => d[k]);
 const PAD_STARTS = DEVICES.filter(d => d.pad != null).map(d => 'Pad' + d.pad + 'Start');
+// онлайн-гости (js/net.js): их кнопки приходят по сети как коды NetI*
+const MAX_PLAYERS = 6, MAX_GUESTS = 5;
+for (let i = 0; i < MAX_GUESTS; i++) {
+  const P = 'Net' + i;
+  DEVICES.push({ net: i, name: 'ОНЛАЙН ' + (i + 1), up: [P + 'Up'], down: [P + 'Down'], left: [P + 'Left'], right: [P + 'Right'], fire: [P + 'A'], special: [P + 'B'] });
+}
 const KEYS_BACK = ['Escape', 'Backspace', 'TouchStart', ...PAD_STARTS];
-const KEYS_PAUSE = ['Escape', 'KeyP', 'TouchStart', ...PAD_STARTS];
+const KEYS_PAUSE = ['Escape', 'KeyP', 'TouchStart', ...PAD_STARTS, ...Array.from({ length: MAX_GUESTS }, (_, i) => 'Net' + i + 'Start')];
 
 function ctrlDir(c) {
   let best = -1, bs = -1;

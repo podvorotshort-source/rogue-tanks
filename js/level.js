@@ -6,7 +6,7 @@
 const T_EMPTY = 0, T_BRICK = 1, T_STEEL = 2, T_WATER = 3, T_BUSH = 4, T_ICE = 5;
 const ENEMY_SPAWNS = [[0, 0], [7, 0], [16, 0], [23, 0]];
 const SIDE_SPAWNS = [[0, 6], [23, 6]];
-const PLAYER_SPAWNS = [[9, 14], [14, 14], [11.5, 14]]; // 3P стартует между 1P и 2P
+const PLAYER_SPAWNS = [[9, 14], [14, 14], [11.5, 14], [7, 14], [16, 14], [11.5, 13]]; // 3P между 1P и 2P, 4P-5P по краям, 6P позади
 
 class Level {
   constructor(biome) {

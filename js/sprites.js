@@ -79,7 +79,7 @@ function paintTank(g, shape, c, f, lv = 0) {
   // ствол
   switch (shape) {
     case 'spread': R(4, 2, 2, 5, c.l); R(10, 2, 2, 5, c.l); R(4, 2, 2, 1, c.w); R(10, 2, 2, 1, c.w); R(7, 0, 2, tTop + 1, c.l); R(8, 0, 1, tTop + 1, c.m); R(7, 0, 2, 1, c.w); break;
-    case 'heavy': R(5, 0, 2, tTop + 1, c.l); R(9, 0, 2, tTop + 1, c.l); R(6, 0, 1, tTop + 1, c.m); R(10, 0, 1, tTop + 1, c.m); R(5, 0, 2, 1, c.w); R(9, 0, 2, 1, c.w); break;
+    case 'heavy': R(6, 0, 4, tTop + 1, c.d); R(7, 0, 2, tTop + 1, c.l); R(8, 1, 1, tTop, c.m); R(7, 0, 2, 1, c.w); break; // один толстый ствол
     case 'power': R(7, 1, 2, tTop, c.l); R(8, 1, 1, tTop, c.m); R(6, 0, 4, 2, c.l); R(6, 0, 4, 1, c.w); break;
     case 'armor': R(6, 0, 4, tTop + 1, c.d); R(7, 0, 2, tTop + 1, c.l); R(7, 0, 2, 1, c.w); break;
     case 'artillery': R(5, 1, 6, tTop, c.d); R(6, 1, 4, tTop, c.l); R(6, 1, 4, 1, c.d); R(7, 1, 2, 1, '#000'); break;
@@ -102,7 +102,10 @@ function paintTank(g, shape, c, f, lv = 0) {
     R(6, 0, 4, hy, c.l); R(7, 0, 2, 1, c.w);
     R(6, 7, 4, 3, c.d); R(7, 8, 2, 1, c.w);
   }
-  if (lv >= 1) { R(6, 0, 4, 2, c.d); R(6, 0, 4, 1, c.w); } // дульный тормоз
+  if (lv >= 1) { // дульный тормоз; у толстого ствола тяжёлого — пошире, чтобы не сливался со стволом
+    if (shape === 'heavy') { R(5, 0, 6, 2, c.d); R(6, 0, 4, 1, c.w); R(7, 1, 2, 1, c.l); }
+    else { R(6, 0, 4, 2, c.d); R(6, 0, 4, 1, c.w); }
+  }
   if (lv >= 2) { R(0, ty, 1, th, c.l); R(15, ty, 1, th, c.l); R(0, ty, tw, 1, c.w); R(16 - tw, ty, tw, 1, c.w); } // бортовые экраны
   if (lv >= 3) { R(hx + hw - 2, hy + hh - 8, 1, 6, '#202020'); R(hx + hw - 2, hy + hh - 9, 1, 2, '#f83800'); R(hx + 1, hy + hh - 4, 2, 2, c.w); } // антенна и фара
   if (lv >= 4) { R(7, hy + hh - 3, 2, 1, '#fcd820'); R(6, hy + hh - 2, 4, 1, '#fcd820'); } // звезда на корме
