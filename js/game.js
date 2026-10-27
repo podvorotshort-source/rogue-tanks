@@ -851,7 +851,7 @@ function drawSelect() {
   text('ВЫБОР ТАНКА', W / 2, 8, '#fcfcfc', 2, 'center');
   const S = G.sel, n = S.slots.length;
   if (Net.hosting()) { text(tr('КОМНАТА') + ' ' + Net.code, W - 3, 3, '#3cbcfc', 1, 'right'); text(tr('ГОСТЕЙ') + ' ' + Net.guestCount(), W - 3, 12, '#3c78a8', 1, 'right'); }
-  else if (Net.status && S.coop) text(Net.status, W - 3, 3, '#f87800', 1, 'right');
+  else if (Net.hostStatus && S.coop) text(Net.hostStatus, W - 3, 3, '#f87800', 1, 'right');
   // в кооп-лобби после вошедших — пустое место «ОГОНЬ - ВОЙТИ», пока не набралось 6
   const cells = S.slots.slice();
   if (S.coop && n < MAX_PLAYERS) cells.push(null);
