@@ -22,7 +22,7 @@ const EN = {
   'КОД КОМНАТЫ (4 БУКВЫ):': 'ROOM CODE (4 LETTERS):', 'СОЗДАЁМ КОМНАТУ...': 'CREATING ROOM...',
   'НЕТ ИНТЕРНЕТА': 'NO INTERNET', 'НЕТ СВЯЗИ С СЕРВЕРОМ': 'CANNOT REACH SERVER', 'ПОДКЛЮЧЕНИЕ...': 'CONNECTING...',
   'ЖДЁМ КАРТИНКУ...': 'WAITING FOR VIDEO...', 'КОМНАТА ЗАПОЛНЕНА': 'ROOM IS FULL', 'СВЯЗЬ С ХОСТОМ ПОТЕРЯНА': 'LOST CONNECTION TO HOST',
-  'КОМНАТА НЕ НАЙДЕНА': 'ROOM NOT FOUND', 'ОШИБКА СЕТИ': 'NETWORK ERROR', 'ХОСТ НЕ ОТВЕЧАЕТ': 'HOST NOT RESPONDING',
+  'КОМНАТА НЕ НАЙДЕНА': 'ROOM NOT FOUND', 'НЕ УДАЛОСЬ СОЕДИНИТЬСЯ С ХОСТОМ': 'COULD NOT REACH HOST', 'КОД - 4 ЛАТИНСКИЕ БУКВЫ': 'CODE IS 4 LATIN LETTERS', 'ОШИБКА СЕТИ': 'NETWORK ERROR', 'ХОСТ НЕ ОТВЕЧАЕТ': 'HOST NOT RESPONDING',
   'ИГРАЕТЕ НА СВОЁМ УСТРОЙСТВЕ, КАРТИНКА - С ЭКРАНА ХОСТА': 'YOU PLAY ON YOUR DEVICE, PICTURE COMES FROM HOST',
   'СКАНИРУЙТЕ ТЕЛЕФОНОМ ИЛИ ВВЕДИТЕ КОД: ОНЛАЙН - ВОЙТИ': 'SCAN WITH A PHONE OR ENTER THE CODE: ONLINE - JOIN',
   'НУЖНО ХОТЯ БЫ 2 ИГРОКА': 'NEED AT LEAST 2 PLAYERS', 'ОГОНЬ - ГОТОВ': 'FIRE - READY', 'ПОДБИТ': 'DOWN',

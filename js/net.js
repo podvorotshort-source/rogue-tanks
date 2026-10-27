@@ -13,6 +13,14 @@ const NET_LIBS = {
   Peer: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
   qrcode: 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js',
 };
+// STUN — узнать свой внешний адрес; TURN — ретранслятор, если напрямую не пробиться (мобильный интернет, строгий NAT)
+const NET_PEER_OPTS = { config: { iceServers: [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
+    username: 'openrelayproject', credential: 'openrelayproject' },
+] } };
+// ошибки связи с сервером знакомств: их можно переждать и переподключиться
+const NET_SIGNAL_ERR = ['network', 'server-error', 'socket-error', 'socket-closed', 'disconnected'];
 const NET_KEYS = ['Up', 'Down', 'Left', 'Right', 'A', 'B', 'Start'];
 const NET_START = ['Escape', 'KeyP', 'TouchStart', ...PAD_STARTS];
 
@@ -50,13 +58,14 @@ const Net = {
   },
   startHost() {
     this.code = this.newCode();
-    const peer = this.peer = new Peer(NET_PREFIX + this.code);
+    const peer = this.peer = new Peer(NET_PREFIX + this.code, NET_PEER_OPTS);
     peer.on('open', () => { this.open = true; this.status = ''; this.makeQr(); });
     peer.on('connection', conn => this.onGuest(conn));
     peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
     peer.on('error', e => {
       if (e.type === 'unavailable-id') { peer.destroy(); this.startHost(); } // код занят — берём другой
-      else if (!this.open) { this.status = 'НЕТ СВЯЗИ С СЕРВЕРОМ'; this.role = null; }
+      else if (!this.open) { this.status = tr('НЕТ СВЯЗИ С СЕРВЕРОМ') + ' (' + e.type + ')'; this.role = null; }
+      else if (NET_SIGNAL_ERR.includes(e.type)) setTimeout(() => { if (!peer.destroyed && peer.disconnected) peer.reconnect(); }, 2000);
     });
   },
   onGuest(conn) {
@@ -143,23 +152,43 @@ const Net = {
     if (code && code.trim()) this.join(code);
   },
   join(code) {
-    this.role = 'guest'; this.code = String(code).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
-    this.status = 'ПОДКЛЮЧЕНИЕ...'; this.failed = false; this.waitT = 0; this.bits = -1;
+    // код могли набрать на русской раскладке: похожие кириллические буквы -> латиница
+    const LAT = { А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', У: 'Y', Х: 'X' };
+    this.role = 'guest'; this.code = String(code).toUpperCase().replace(/[А-ЯЁ]/g, ch => LAT[ch] || ch).replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    this.status = 'ПОДКЛЮЧЕНИЕ...'; this.failed = false; this.waitT = 0; this.bits = -1; this.tries = 0;
     G.state = 'net'; Music.stop();
-    this.load('Peer').then(() => {
-      const peer = this.peer = new Peer();
-      peer.on('open', () => {
-        const conn = this.conn = peer.connect(NET_PREFIX + this.code);
-        conn.on('open', () => { this.status = 'ЖДЁМ КАРТИНКУ...'; });
-        conn.on('data', d => {
-          if (d && d.t === 'hi') this.slot = d.slot;
-          if (d && d.t === 'full') this.fail('КОМНАТА ЗАПОЛНЕНА');
-        });
-        conn.on('close', () => this.fail('СВЯЗЬ С ХОСТОМ ПОТЕРЯНА'));
+    if (this.code.length !== 4) { this.fail('КОД - 4 ЛАТИНСКИЕ БУКВЫ'); return; }
+    this.load('Peer').then(() => this.connect(), () => this.fail('НЕТ ИНТЕРНЕТА'));
+  },
+  // попытка связаться с хостом; сбои сервера знакомств до установки связи — повторяем
+  connect() {
+    if (this.failed) return;
+    this.tries++;
+    if (this.peer) this.peer.destroy();
+    const peer = this.peer = new Peer(NET_PEER_OPTS);
+    const retry = why => {
+      if (this.failed || this.peer !== peer) return;
+      if (this.tries < 4) { this.status = tr('ПОДКЛЮЧЕНИЕ...') + ' ' + (this.tries + 1); setTimeout(() => this.connect(), 1500); }
+      else this.fail(why);
+    };
+    peer.on('open', () => {
+      const conn = this.conn = peer.connect(NET_PREFIX + this.code, { reliable: true });
+      conn.on('open', () => { this.status = 'ЖДЁМ КАРТИНКУ...'; this.waitT = 0; });
+      conn.on('data', d => {
+        if (d && d.t === 'hi') this.slot = d.slot;
+        if (d && d.t === 'full') this.fail('КОМНАТА ЗАПОЛНЕНА');
       });
-      peer.on('call', call => { call.answer(); call.on('stream', st => this.showVideo(st)); });
-      peer.on('error', e => this.fail(e.type === 'peer-unavailable' ? 'КОМНАТА НЕ НАЙДЕНА' : 'ОШИБКА СЕТИ'));
-    }, () => this.fail('НЕТ ИНТЕРНЕТА'));
+      conn.on('error', e => { if (!conn.open) retry(tr('НЕ УДАЛОСЬ СОЕДИНИТЬСЯ С ХОСТОМ') + ' (' + e.type + ')'); });
+      conn.on('close', () => { if (this.conn === conn) this.fail('СВЯЗЬ С ХОСТОМ ПОТЕРЯНА'); });
+    });
+    peer.on('call', call => { call.answer(); call.on('stream', st => this.showVideo(st)); });
+    peer.on('error', e => {
+      if (e.type === 'peer-unavailable') return this.fail('КОМНАТА НЕ НАЙДЕНА');
+      // связь с хостом уже есть — сервер знакомств больше не нужен, игру не рвём
+      if (this.conn && this.conn.open) { if (NET_SIGNAL_ERR.includes(e.type) && !peer.destroyed) setTimeout(() => { if (peer.disconnected && !peer.destroyed) peer.reconnect(); }, 2000); return; }
+      if (NET_SIGNAL_ERR.includes(e.type)) retry(tr('НЕТ СВЯЗИ С СЕРВЕРОМ') + ' (' + e.type + ')');
+      else this.fail(tr('ОШИБКА СЕТИ') + ' (' + e.type + ')');
+    });
   },
   fail(msg) {
     if (this.failed) return;
@@ -191,7 +220,10 @@ const Net = {
       if (anyCtrl('fire') || Input.hit(KEYS_BACK)) location.href = location.pathname; // назад в меню, без ?join
       return;
     }
-    if (!this.video && this.waitT > 20) this.fail('ХОСТ НЕ ОТВЕЧАЕТ');
+    if (!this.video && this.waitT > 15) {
+      if (this.tries < 4 && !(this.conn && this.conn.open)) { this.waitT = 0; this.connect(); }
+      else this.fail('ХОСТ НЕ ОТВЕЧАЕТ');
+    }
     if (!this.conn || !this.conn.open) return;
     const C = ALL_CTRL, keys = [C.up, C.down, C.left, C.right, C.fire, C.special, NET_START];
     let b = 0;
