@@ -759,6 +759,7 @@ function drawTitle() {
   if (G.best.depth > 0) text(tr('РЕКОРД: СЕКТОР') + ' ' + sectorName(G.best.depth) + '   ' + tr('ОЧКИ:') + ' ' + G.best.score, W / 2, 180, '#7c7c7c', 1, 'center');
   text('4 БИОМА  •  8 БОССОВ  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ', W / 2, 194, '#3c78a8', 1, 'center');
   if (!Sound.ac || Sound.ac.state !== 'running') text(Touch.on ? 'ДЛЯ ЗВУКА КОСНИТЕСЬ ЭКРАНА' : 'ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ', W / 2, 4, '#545454', 1, 'center');
+  text('V' + BUILD, W - 3, 4, '#3c3c3c', 1, 'right');
   // парад танков внизу
   const T = getTiles(0);
   for (let x = 0; x < W; x += 8) { ctx.drawImage(T.brick, x, 240); ctx.drawImage(T.brick, x, 248); }

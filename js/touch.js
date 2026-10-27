@@ -58,7 +58,7 @@ const Touch = {
   init() {
     const css = document.createElement('style');
     css.textContent = `
-      html, body, canvas, #touch, #touch * { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+      html, body, * { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
       #touch { position: fixed; inset: 0; display: none; pointer-events: none; z-index: 10; font-family: monospace; }
       #touch .zone { position: absolute; left: 0; top: 0; width: 50%; height: 100%; pointer-events: auto; }
       #touch .stick { position: absolute; border-radius: 50%; border: 2px solid rgba(252,252,252,.25); background: rgba(252,252,252,.06); pointer-events: none; }
@@ -128,17 +128,20 @@ const Touch = {
     // браузер не должен зумить и прокручивать: iOS игнорирует user-scalable=no,
     // поэтому гасим сами касания (pointer-события джойстика и кнопок приходят раньше и не страдают)
     const block = e => { if (e.cancelable) e.preventDefault(); };
-    for (const t of ['touchstart', 'touchmove', 'touchend', 'dblclick', 'gesturestart', 'gesturechange', 'gestureend'])
+    for (const t of ['touchstart', 'touchmove', 'touchend', 'dblclick', 'gesturestart', 'gesturechange', 'gestureend']) {
+      addEventListener(t, block, { passive: false, capture: true });
       document.addEventListener(t, block, { passive: false });
+    }
     // если зум всё же случился — возвращаем масштаб 1
-    const meta = document.querySelector('meta[name=viewport]');
+    const meta = document.querySelector('meta[name=viewport]'), VIEWPORT = meta && meta.content;
     const unzoom = () => {
       if (!meta || !window.visualViewport || visualViewport.scale <= 1.01) return;
-      const c = meta.content;
-      meta.content = c + ', minimum-scale=1';
-      setTimeout(() => { meta.content = c; }, 50);
+      // iOS сбрасывает зум, когда meta viewport меняется на жёсткий масштаб 1
+      meta.content = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover';
+      setTimeout(() => { meta.content = VIEWPORT; }, 300);
     };
-    if (window.visualViewport) visualViewport.addEventListener('resize', unzoom);
+    if (window.visualViewport) { visualViewport.addEventListener('resize', unzoom); visualViewport.addEventListener('scroll', unzoom); }
+    addEventListener('touchend', () => setTimeout(unzoom, 350));
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.releaseAll(); });
     addEventListener('blur', () => this.releaseAll());
     // включаемся на сенсорных экранах сразу, на остальных — при первом касании
