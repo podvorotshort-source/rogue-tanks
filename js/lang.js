@@ -82,7 +82,7 @@ const EN = {
   'ЩИТ ЯДРА ОТКЛЮЧЁН!': 'CORE SHIELD DOWN!',
   'БЛИЗНЕЦЫ': 'TWINS', 'КРИОМЕХ': 'CRYOMECH', 'СКОРПИОН': 'SCORPION', 'ФАНТОМ': 'PHANTOM',
   'БЛИЗНЕЦ В ЯРОСТИ!': 'TWIN IS ENRAGED!', 'КРИОМЕХ: АБСОЛЮТНЫЙ НОЛЬ!': 'CRYOMECH: ABSOLUTE ZERO!',
-  'СКОРПИОН: ЯДОВИТАЯ ЯРОСТЬ!': 'SCORPION: VENOM RAGE!', 'ФАНТОМ: ГОЛОГРАММЫ!': 'PHANTOM: HOLOGRAMS!',
+  'СКОРПИОН: ЯДОВИТАЯ ЯРОСТЬ!': 'SCORPION: VENOM RAGE!', 'ПАНЦИРЬ ТРЕСНУЛ!': 'SHELL CRACKED!', 'В ПАСТЬ ×2': 'MOUTH ×2', 'ОГЛУШЁН': 'STUNNED', 'ФАНТОМ: ГОЛОГРАММЫ!': 'PHANTOM: HOLOGRAMS!',
   'ФАНТОМ: ПЕРЕГРУЗКА!': 'PHANTOM: OVERLOAD!', 'ФАНТОМ УНИЧТОЖЕН': 'PHANTOM DESTROYED',
   // классы
   'ШТУРМОВИК': 'ASSAULT', 'РАЗВЕДЧИК': 'SCOUT', 'ТЯЖЁЛЫЙ': 'HEAVY',

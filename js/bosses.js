@@ -947,7 +947,10 @@ class Cryo extends Boss {
 }
 
 // ------------------------------------------------------------
-//  7. СКОРПИОН — лобовая броня (бить в бок, спину и жало), рывок, кислота
+//  7. СКОРПИОН — лобовая броня (бить в бок, спину и жало), рывок, кислота.
+//     Одному тоже можно: поворачивается медленно (можно обойти сбоку),
+//     перед рывком и после него раскрывает пасть (×2), после рывка оглушён,
+//     а лобовой панцирь трескается от попаданий и на время открывается.
 // ------------------------------------------------------------
 class Scorpion extends Boss {
   constructor(scale) {
@@ -955,7 +958,10 @@ class Scorpion extends Boss {
     this.x = FW / 2; this.y = -30; this.a = Math.PI / 2; this.state = 'enter'; this.walk = 0;
     this.snapT = 1; this.clawT = 0; this.lungeT = 5; this.lunge = null; this.acidT = 3; this.stingT = 4.5; this.sting = 0;
     this.minionT = 12; this.tgtT = 0; this.tgx = FW / 2; this.tgy = FH / 2; this.pools = []; this.msgT = 0;
+    this.stun = 0; this.crack = 0; this.cracked = 0;
   }
+  // пасть раскрыта: замах перед рывком и оглушение после него
+  mouthOpen() { return this.stun > 0 || (this.lunge && !this.lunge.go); }
   world(lx, ly) { const c = Math.cos(this.a), s = Math.sin(this.a); return { x: this.x + lx * c - ly * s, y: this.y + lx * s + ly * c }; }
   tailPts() {
     const pts = [];
@@ -970,15 +976,28 @@ class Scorpion extends Boss {
     if (!this.active) return null;
     const P = this.tailPts(), tip = P[P.length - 1];
     if (dist(x, y, tip.x, tip.y) < 5 + h) return 'tail';
-    for (const s of [-1, 1]) { const c = this.world(24, s * 13); if (dist(x, y, c.x, c.y) < 7 + h) return 'armor'; }
+    const c = Math.cos(this.a), s = Math.sin(this.a), fw = (x - this.x) * c + (y - this.y) * s, side = -(x - this.x) * s + (y - this.y) * c;
+    if (this.mouthOpen() && fw > 5 && Math.abs(side) < 9 && dist(x, y, this.x, this.y) < 26 + h) return 'mouth';
+    for (const k of [-1, 1]) { const w = this.world(24, k * 13); if (dist(x, y, w.x, w.y) < 7 + h) return this.cracked > 0 ? 'body' : 'armor'; }
     if (dist(x, y, this.x, this.y) > 17 + h) return null;
-    return (x - this.x) * Math.cos(this.a) + (y - this.y) * Math.sin(this.a) > 5 ? 'armor' : 'body';
+    return fw > 5 && this.cracked <= 0 ? 'armor' : 'body';
   }
   damage(dmg, part) {
     if (!this.active || this.dying) return 'reflect';
     if (part === 'armor') {
+      // каждый рикошет трескает панцирь: набралось — лоб открыт на несколько секунд
+      this.crack += dmg;
+      if (this.crack >= (this.phase === 1 ? 10 : 14)) {
+        this.crack = 0; this.cracked = 4.5; this.flash = 0.15;
+        G.popups.push(new Popup(this.x, this.y - 30, 'ПАНЦИРЬ ТРЕСНУЛ!', '#fcd820', 1.4)); Sound.play('brick');
+        return 'ok';
+      }
       if (this.msgT <= 0) { this.msgT = 1.2; G.popups.push(new Popup(this.x, this.y - 26, 'БРОНЯ', '#a8a8a8')); }
       return 'reflect';
+    }
+    if (part === 'mouth') {
+      if (this.msgT <= 0) { this.msgT = 0.8; G.popups.push(new Popup(this.x, this.y - 26, 'В ПАСТЬ ×2', '#fcd820')); }
+      return super.damage(dmg * 2);
     }
     if (part === 'tail') {
       if (this.msgT <= 0) { this.msgT = 0.8; G.popups.push(new Popup(this.x, this.y - 26, '×2', '#fcd820')); }
@@ -995,7 +1014,7 @@ class Scorpion extends Boss {
     return true;
   }
   update(dt) {
-    this.t += dt; this.flash -= dt; this.msgT -= dt; this.clawT -= dt;
+    this.t += dt; this.flash -= dt; this.msgT -= dt; this.clawT -= dt; this.cracked -= dt;
     if (this.dying) return this.updateDeath(dt);
     if (this.state === 'enter') {
       this.y += 40 * dt; this.walk += dt * 10;
@@ -1015,27 +1034,35 @@ class Scorpion extends Boss {
       const L = this.lunge;
       L.t += dt;
       if (L.t < L.wind) {
-        if (tg) this.a += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.a), -4 * dt, 4 * dt);
+        // целится только первую половину замаха — в конце можно уйти с линии
+        if (tg && L.t < L.wind * 0.5) this.a += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.a), -3 * dt, 3 * dt);
         G.shake = Math.max(G.shake, 1);
         return;
       }
       if (!L.go) { L.go = true; Sound.play('dash'); }
       const sp = 190 * dt;
       this.walk += dt * 6;
-      if (!this.move(Math.cos(this.a) * sp, Math.sin(this.a) * sp, 2) || L.t > L.wind + 0.6) {
+      const hitWall = !this.move(Math.cos(this.a) * sp, Math.sin(this.a) * sp, 2);
+      if (hitWall || L.t > L.wind + 0.6) {
         this.lunge = null; this.clawT = 0.3; G.shake = 4;
+        // после рывка оглушён и не разворачивается; врезался в стену — дольше
+        this.stun = (this.phase === 1 ? 1.6 : 1.1) + (hitWall ? 0.9 : 0);
+        G.popups.push(new Popup(this.x, this.y - 28, 'ОГЛУШЁН', '#3cbcfc', 1.1));
         this.lungeT = this.phase === 1 ? rand(5, 6.5) : rand(3.5, 4.5);
         const f = this.world(26, 0);
         explode(f.x, f.y, 12, { hurtPlayers: true });
       }
       return;
     }
+    if (this.stun > 0) { this.stun -= dt; this.walk += dt * 3; return; }
     this.tgtT -= dt;
     if (this.tgtT <= 0) {
       if (tg && Math.random() < 0.7) { this.tgx = tg.cx; this.tgy = tg.cy; } else { this.tgx = rand(40, FW - 40); this.tgy = rand(40, FH - 40); }
       this.tgtT = rand(1.5, 2.5);
     }
-    this.a += clamp(normA(angleTo(this.x, this.y, this.tgx, this.tgy) - this.a), -2 * dt, 2 * dt);
+    // разворачивается медленно — одиночка успевает обойти сбоку
+    const turn = this.phase === 1 ? 1.1 : 1.5;
+    this.a += clamp(normA(angleTo(this.x, this.y, this.tgx, this.tgy) - this.a), -turn * dt, turn * dt);
     if (dist(this.x, this.y, this.tgx, this.tgy) > 26) {
       const sp = (this.phase === 1 ? 34 : 46) * dt;
       if (!this.move(Math.cos(this.a) * sp, Math.sin(this.a) * sp, 1)) this.tgtT = 0;
@@ -1072,7 +1099,7 @@ class Scorpion extends Boss {
       Sound.play('eshoot');
     }
     this.lungeT -= dt;
-    if (this.lungeT <= 0 && tg && dist(this.x, this.y, tg.cx, tg.cy) < 180) { this.lunge = { t: 0, wind: 0.7, go: false }; Sound.play('charge'); }
+    if (this.lungeT <= 0 && tg && dist(this.x, this.y, tg.cx, tg.cy) < 180) { this.lunge = { t: 0, wind: this.phase === 1 ? 1.1 : 0.85, go: false }; Sound.play('charge'); }
     if (this.phase === 2) { this.minionT -= dt; if (this.minionT <= 0) { this.minionT = 14; G.spawnMinions(2, 'fast', this.x, this.y); } }
   }
   drawGround(g) {
@@ -1097,7 +1124,19 @@ class Scorpion extends Boss {
     g.save();
     g.translate(Math.round(this.x), Math.round(this.y)); g.rotate(this.a);
     g.drawImage((fl || wind ? S.w : S.n)[this.clawT > 0 || (this.lunge && this.lunge.go) ? 1 : 0], -26, -20);
+    if (this.mouthOpen()) { // раскрытая пасть — слабое место
+      rect(g, 9, -4, 9, 8, P.k); rect(g, 10, -3, 7, 6, '#a80000');
+      rect(g, 11, -2, 5, 4, Math.floor(this.t * 8) % 2 ? '#f83800' : '#fcd820');
+    }
+    if (this.cracked > 0 && !(this.cracked < 1 && Math.floor(this.t * 10) % 2)) { // трещины на лобовом панцире
+      pline(g, 8, -8, 13, -2, P.k, 1); pline(g, 13, -2, 10, 3, P.k, 1); pline(g, 10, 3, 15, 8, P.k, 1);
+      pline(g, 15, -9, 18, -5, '#fcd820', 1);
+    }
     g.restore();
+    if (this.stun > 0) for (let i = 0; i < 3; i++) { // звёздочки оглушения
+      const a = this.t * 5 + i * 2.1;
+      rect(g, Math.round(this.x + Math.cos(a) * 12) - 1, Math.round(this.y - 24 + Math.sin(a) * 3) - 1, 2, 2, i % 2 ? '#fcd820' : '#fcfcfc');
+    }
     // хвост и жало поверх спины
     const T = this.tailPts();
     for (let i = 0; i < T.length; i++) { const p = T[i], r = i < 3 ? 4 : 3; disc(g, p.x, p.y, r, P.k); disc(g, p.x, p.y, r - 1, fl ? '#fcfcfc' : P.m); rect(g, Math.round(p.x) - 1, Math.round(p.y) - 1, 1, 1, P.l); }
