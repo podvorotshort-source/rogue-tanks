@@ -1,6 +1,7 @@
 'use strict';
 // ============================================================
-//  BOSSES: Голиаф, Стрекоза, Сколопендра, Цитадель Омега
+//  BOSSES: Голиаф, Стрекоза, Сколопендра, Цитадель Омега,
+//          Близнецы, Криомех, Скорпион, Фантом
 // ============================================================
 
 function normA(a) { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; }
@@ -18,6 +19,7 @@ class Boss {
   }
   blocks() { return false; }
   hitTest() { return null; }
+  aim() { return { x: this.x, y: this.y }; } // куда целятся самонаводящиеся системы игроков
   damage(dmg) {
     if (!this.active || this.dying) return 'reflect';
     this.hp -= dmg; this.flash = 0.08;
@@ -75,6 +77,7 @@ class Goliath extends Boss {
   }
   get cx() { return this.x + 24; }
   get cy() { return this.y + 24; }
+  aim() { return { x: this.cx, y: this.cy }; }
   bounds() { return { x: this.x, y: this.y, w: 48, h: 48 }; }
   blocks(x, y, w, h) { return this.alive && !this.dying && overlap(x, y, w, h, this.x + 1, this.y + 1, 46, 46); }
   hitTest(x, y, h) { return overlap(x - h, y - h, h * 2, h * 2, this.x + 2, this.y + 2, 44, 44) ? 'body' : null; }
@@ -461,6 +464,7 @@ class Omega extends Boss {
   constructor(scale) {
     const th = Math.round(16 * scale), ch = Math.round(110 * scale);
     super('ЦИТАДЕЛЬ ОМЕГА', th * 4 + ch);
+    this.deadText = 'ЦИТАДЕЛЬ ОМЕГА УНИЧТОЖЕНА';
     this.x = (FW - 128) / 2; this.y = -60; this.vx = 0; this.anim = 0; this.animT = 0;
     this.turrets = OMEGA_TURRETS.map(t => ({ ...t, hp: th, max: th, dead: false, a: Math.PI / 2, cool: rand(1, 2.5), flash: 0, burst: 0, burstT: 0 }));
     this.core = { hp: ch, max: ch, flash: 0 };
@@ -469,6 +473,7 @@ class Omega extends Boss {
   }
   get coreX() { return this.x + 64; }
   get coreY() { return this.y + 22; }
+  aim() { const t = this.turrets.find(q => !q.dead); return t ? { x: this.x + t.ox + 8, y: this.y + t.oy + 8 } : { x: this.coreX, y: this.coreY }; }
   bounds() { return { x: this.x, y: this.y, w: 128, h: 56 }; }
   blocks(x, y, w, h) { return this.alive && !this.dying && overlap(x, y, w, h, this.x, this.y, 128, 56); }
   hitTest(x, y, h) {
@@ -633,6 +638,669 @@ class Omega extends Boss {
   }
 }
 
-function makeBoss(biome, scale) {
-  return new [Goliath, Heli, Worm, Omega][biome](scale);
+// ------------------------------------------------------------
+//  5. БЛИЗНЕЦЫ — два средних танка: берут в клещи, выживший впадает в ярость
+// ------------------------------------------------------------
+class Twins extends Boss {
+  constructor(scale) {
+    const th = Math.round(38 * scale);
+    super('БЛИЗНЕЦЫ', th * 2);
+    this.twins = [0, 1].map(i => ({
+      i, x: i ? FW / 2 + 28 : FW / 2 - 60, y: -36 - i * 16, dir: 2, hp: th, max: th, dead: false, flash: 0,
+      anim: 0, animT: 0, decideT: rand(0.4, 1.2), stuck: false, shotT: 1.6 + i * 0.9,
+    }));
+    this.state = 'enter'; this.pincerT = 8; this.pincer = 0; this.ringT = 4; this.rage = false;
+  }
+  living() { return this.twins.filter(t => !t.dead); }
+  aim() { const t = this.living()[0] || this.twins[0]; return { x: t.x + 16, y: t.y + 16 }; }
+  bounds() {
+    const L = this.living().length ? this.living() : this.twins;
+    const x0 = Math.min(...L.map(t => t.x)), y0 = Math.min(...L.map(t => t.y));
+    return { x: x0, y: y0, w: Math.max(...L.map(t => t.x)) - x0 + 32, h: Math.max(...L.map(t => t.y)) - y0 + 32 };
+  }
+  blocks(x, y, w, h) { return this.alive && !this.dying && this.twins.some(t => !t.dead && overlap(x, y, w, h, t.x + 1, t.y + 1, 30, 30)); }
+  hitTest(x, y, h) {
+    for (const t of this.twins) if (!t.dead && overlap(x - h, y - h, h * 2, h * 2, t.x + 1, t.y + 1, 30, 30)) return t;
+    return null;
+  }
+  damage(dmg, part) {
+    if (!this.active || this.dying) return 'reflect';
+    if (part && typeof part === 'object') this.hitTwin(part, dmg);
+    else { const L = this.living(); for (const t of L) this.hitTwin(t, dmg / L.length); } // граната — поровну обоим
+    return 'ok';
+  }
+  hitTwin(t, dmg) {
+    if (t.dead) t = this.living()[0];
+    if (!t) return;
+    const d = Math.min(t.hp, dmg);
+    t.hp -= d; this.hp -= d; t.flash = 0.08;
+    Sound.play('hit');
+    if (t.hp > 0) return;
+    t.dead = true;
+    explode(t.x + 16, t.y + 16, 24, { bricks: false });
+    if (!this.living().length) { this.hp = 0; this.startDeath(); return; }
+    this.rage = true; this.pincer = 0;
+    for (const q of this.living()) q.shotT = 0.6;
+    G.banner('БЛИЗНЕЦ В ЯРОСТИ!', '#f83800'); Sound.play('roar');
+  }
+  stepTwin(t, want) {
+    const L = G.level, o = this.twins[1 - t.i];
+    let moved = 0;
+    while (want > 0.0001) {
+      const s = Math.min(1, want), nx = t.x + DX[t.dir] * s, ny = t.y + DY[t.dir] * s;
+      if (nx < 0 || ny < 0 || nx + 32 > FW || ny + 32 > FH) return moved;
+      const x0 = Math.floor(nx / CELL), y0 = Math.floor(ny / CELL), x1 = Math.floor((nx + 31.99) / CELL), y1 = Math.floor((ny + 31.99) / CELL);
+      for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) { const c = L.get(cx, cy); if (c === T_STEEL || c === T_WATER) return moved; }
+      if (!o.dead && overlap(nx, ny, 32, 32, o.x, o.y, 32, 32)) return moved;
+      if (L.destroyRect(nx, ny, 32, 32, false).brick) Sound.play('brick');
+      if (!this.pushPlayers(nx + 1, ny + 1, 30, 30, DX[t.dir] * s, DY[t.dir] * s, 1)) return moved;
+      t.x = nx; t.y = ny; want -= s; moved += s;
+    }
+    return moved;
+  }
+  tread(t, dt) { t.animT += dt; if (t.animT > 0.08) { t.animT = 0; t.anim ^= 1; } }
+  update(dt) {
+    this.t += dt; this.flash -= dt;
+    for (const t of this.twins) t.flash -= dt;
+    if (this.dying) return this.updateDeath(dt);
+    if (this.state === 'enter') {
+      let done = true;
+      for (const t of this.twins) {
+        if (t.y >= 10) { t.y = 10; continue; }
+        done = false; t.y = Math.min(10, t.y + 26 * dt); this.tread(t, dt);
+        if (t.y > -32) G.level.destroyRect(t.x, Math.max(0, t.y), 32, t.y + 32 - Math.max(0, t.y), false);
+      }
+      if (done) { this.state = 'fight'; this.active = true; }
+      return;
+    }
+    if (this.phase === 1 && this.hp < this.maxHp * 0.5) this.phase = 2;
+    for (const t of this.twins) if (t.dead && Math.random() < dt * 5) smoke(t.x + rand(6, 26), t.y + rand(6, 26));
+    // клещи: оба замирают и бьют веером с двух сторон
+    if (!this.rage) {
+      this.pincerT -= dt;
+      if (this.pincerT <= 0 && !this.pincer) { this.pincer = 0.8; Sound.play('charge'); }
+      if (this.pincer > 0) {
+        this.pincer -= dt;
+        if (this.pincer <= 0) {
+          this.pincer = 0; this.pincerT = this.phase === 1 ? 8 : 6;
+          for (const t of this.living()) {
+            const tg = G.nearestPlayer(t.x + 16, t.y + 16);
+            if (!tg) continue;
+            const a = angleTo(t.x + 16, t.y + 16, tg.cx, tg.cy), n = this.phase === 1 ? 5 : 7;
+            for (let k = 0; k < n; k++) enemyShot(t.x + 16, t.y + 16, a + (k - (n - 1) / 2) * 0.16, 120, { kind: 'small', size: 3 });
+          }
+          Sound.play('cannon');
+        }
+        return;
+      }
+    } else {
+      this.ringT -= dt;
+      const t = this.living()[0];
+      if (t && this.ringT <= 0) { this.ringT = 4.5; G.ring(t.x + 16, t.y + 16, 14, 75, rand(0, 1), 'small'); }
+      if (t && Math.random() < dt * 4) smoke(t.x + rand(6, 26), t.y + rand(6, 26));
+    }
+    for (const t of this.living()) this.driveTwin(t, dt);
+  }
+  driveTwin(t, dt) {
+    const tg = G.nearestPlayer(t.x + 16, t.y + 16);
+    const dx = tg ? tg.cx - t.x - 16 : 0, dy = tg ? tg.cy - t.y - 16 : 0;
+    t.decideT -= dt;
+    if (t.decideT <= 0) {
+      t.decideT = rand(0.8, 1.8);
+      if (t.stuck || !tg || Math.random() < 0.15) { t.stuck = false; t.dir = randi(0, 3); }
+      // первый выходит на линию цели по горизонтали, второй — по вертикали: перекрёстный огонь
+      else if (t.i === 0 || this.rage) t.dir = Math.abs(dy) > 10 ? (dy > 0 ? 2 : 0) : (dx > 0 ? 1 : 3);
+      else t.dir = Math.abs(dx) > 10 ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+    }
+    const want = (this.rage ? 36 : this.phase === 2 ? 28 : 22) * dt;
+    if (this.stepTwin(t, want) < want * 0.5) { t.stuck = true; t.decideT = Math.min(t.decideT, 0.25); }
+    this.tread(t, dt);
+    t.shotT -= dt;
+    const cd = this.rage ? 1.0 : this.phase === 2 ? 1.5 : 1.9;
+    const aligned = tg && ((t.dir & 1) ? Math.abs(dy) < 12 && dx * DX[t.dir] > 0 : Math.abs(dx) < 12 && dy * DY[t.dir] > 0);
+    if (t.shotT <= 0 || (aligned && t.shotT < cd * 0.5)) {
+      t.shotT = cd;
+      const bx = t.x + 16 + DX[t.dir] * 18, by = t.y + 16 + DY[t.dir] * 18, a = Math.atan2(DY[t.dir], DX[t.dir]);
+      for (const o of this.rage ? [-0.22, 0, 0.22] : [0]) enemyShot(bx, by, a + o, 150, { kind: 'big', size: 6, cancel: true });
+      G.effects.push(new Boom(bx, by, 5, { quiet: true }));
+      Sound.play('cannon');
+    }
+  }
+  drawGround(g) {
+    const S = BossGfx.twins();
+    for (const t of this.twins) {
+      const x = Math.round(t.x), y = Math.round(t.y);
+      if (t.dead) { rect(g, x + 3, y + 3, 26, 26, '#1c1c1c'); rect(g, x + 8, y + 8, 16, 16, '#2c2c2c'); rect(g, x + 12, y + 2, 4, 10, '#1c1c1c'); continue; }
+      g.drawImage((t.flash > 0 ? S[t.i].w : S[t.i].n)[t.anim][t.dir], x, y);
+      if (this.pincer > 0 && Math.floor(this.t * 16) % 2) rect(g, x + 14, y + 14, 4, 4, '#fcfcfc');
+      if (this.active) { rect(g, x + 4, y - 4, 24, 2, '#200000'); rect(g, x + 4, y - 4, Math.round(24 * t.hp / t.max), 2, t.i ? '#3cbcfc' : '#f83800'); }
+    }
+  }
 }
+
+// ------------------------------------------------------------
+//  6. КРИОМЕХ — шагоход: щит из ледяных кристаллов, метель, сосульки, лёд под ногами
+// ------------------------------------------------------------
+class Cryo extends Boss {
+  constructor(scale) {
+    super('КРИОМЕХ', Math.round(95 * scale));
+    this.x = FW / 2; this.y = -30; this.state = 'enter'; this.gunA = Math.PI / 2; this.walk = 0;
+    this.tx = FW / 2; this.ty = 60; this.moveT = 2; this.frostT = 0;
+    this.crHp = Math.round(4 * Math.sqrt(scale)); this.crystals = []; this.orbA = 0; this.regrowT = 0;
+    this.shardT = 2; this.stormT = 6; this.storm = null; this.rainT = 4; this.volleyT = 8;
+    this.makeCrystals(4);
+  }
+  makeCrystals(n) {
+    this.crystals = [];
+    for (let i = 0; i < n; i++) this.crystals.push({ hp: this.crHp, flash: 0, k: i / n, x: this.x, y: this.y });
+    this.placeCrystals();
+  }
+  placeCrystals() { for (const c of this.crystals) { const a = this.orbA + c.k * Math.PI * 2; c.x = this.x + Math.cos(a) * 28; c.y = this.y + Math.sin(a) * 28; } }
+  bounds() { return { x: this.x - 20, y: this.y - 20, w: 40, h: 40 }; }
+  blocks(x, y, w, h) { return this.alive && !this.dying && overlap(x, y, w, h, this.x - 15, this.y - 15, 30, 30); }
+  hitTest(x, y, h) {
+    if (!this.active) return null;
+    for (const c of this.crystals) if (dist(x, y, c.x, c.y) < 4 + h) return c;
+    return dist(x, y, this.x, this.y) < 16 + h ? 'body' : null;
+  }
+  damage(dmg, part) {
+    if (!this.active || this.dying) return 'reflect';
+    if (part === 'grenade') for (const c of this.crystals.slice()) this.breakCrystal(c);
+    else if (part && typeof part === 'object') {
+      if (!this.crystals.includes(part)) return 'reflect';
+      part.hp -= dmg; part.flash = 0.08;
+      Sound.play('hit');
+      if (part.hp <= 0) { this.breakCrystal(part); return super.damage(2); }
+      return 'ok';
+    }
+    return super.damage(dmg);
+  }
+  breakCrystal(c) {
+    this.crystals.splice(this.crystals.indexOf(c), 1);
+    G.effects.push(new Boom(c.x, c.y, 9, { pal: ICE_COLS }));
+    Sound.play('ice');
+    if (!this.crystals.length) this.regrowT = this.phase === 1 ? 9 : 6;
+  }
+  // клетки пола вокруг точки покрываются льдом
+  frost(x, y, r) {
+    const L = G.level;
+    for (let cy = Math.floor((y - r) / CELL); cy <= Math.floor((y + r) / CELL); cy++)
+      for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++)
+        if (L.get(cx, cy) === T_EMPTY && dist(cx * CELL + 4, cy * CELL + 4, x, y) < r) L.set(cx, cy, T_ICE);
+  }
+  update(dt) {
+    this.t += dt; this.flash -= dt;
+    for (const c of this.crystals) c.flash -= dt;
+    if (this.dying) return this.updateDeath(dt);
+    this.orbA += dt * (this.phase === 2 ? 2.2 : 1.4);
+    this.placeCrystals();
+    if (this.state === 'enter') {
+      this.y += 30 * dt; this.walk += dt * 6;
+      if (this.y >= 56) {
+        this.y = 56; this.state = 'fight'; this.active = true; G.shake = 5;
+        G.level.destroyCircle(this.x, this.y, 20, false); this.frost(this.x, this.y, 44);
+        G.effects.push(new RingFx(this.x, this.y, 10, 50, '#a4e4fc', 0.5));
+      }
+      return;
+    }
+    if (this.phase === 1 && this.hp < this.maxHp * 0.5) {
+      this.phase = 2; this.makeCrystals(6); this.regrowT = 0; this.volleyT = 4;
+      G.banner('КРИОМЕХ: АБСОЛЮТНЫЙ НОЛЬ!', '#3cbcfc'); Sound.play('roar');
+      G.ring(this.x, this.y, 18, 85, rand(0, 1), 'ice'); this.frost(this.x, this.y, 60);
+    }
+    const tg = G.nearestPlayer(this.x, this.y);
+    // ходьба: держится на дистанции от цели, перешагивает стены, давит кирпич
+    this.moveT -= dt;
+    if (this.moveT <= 0) {
+      this.moveT = rand(2, 3.5);
+      if (tg) { const a = rand(0, Math.PI * 2), r = rand(60, 100); this.tx = clamp(tg.cx + Math.cos(a) * r, 24, FW - 24); this.ty = clamp(tg.cy + Math.sin(a) * r, 24, FH - 24); }
+    }
+    const sp = (this.phase === 1 ? 26 : 36) * dt, d = dist(this.x, this.y, this.tx, this.ty);
+    if (d > 2) {
+      const a = angleTo(this.x, this.y, this.tx, this.ty), nx = this.x + Math.cos(a) * Math.min(sp, d), ny = this.y + Math.sin(a) * Math.min(sp, d);
+      if (this.pushPlayers(nx - 15, ny - 15, 30, 30, nx - this.x, ny - this.y, 1)) { this.x = nx; this.y = ny; this.walk += dt * 8; }
+      else this.moveT = Math.min(this.moveT, 0.3);
+      if (G.level.destroyCircle(this.x, this.y, 17, false)) Sound.play('brick');
+    }
+    this.frostT -= dt;
+    if (this.frostT <= 0) { this.frostT = 0.25; this.frost(this.x, this.y, this.phase === 1 ? 18 : 26); }
+    for (const p of G.players) if (!p.dead && this.crystals.some(c => dist(c.x, c.y, p.cx, p.cy) < 10)) p.hurt(1);
+    if (this.regrowT > 0) {
+      this.regrowT -= dt;
+      if (this.regrowT <= 0) { this.makeCrystals(this.phase === 1 ? 4 : 6); Sound.play('ice'); G.effects.push(new RingFx(this.x, this.y, 30, 10, '#a4e4fc', 0.4)); }
+    }
+    if (tg) this.gunA += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.gunA), -3 * dt, 3 * dt);
+    // прицельный веер осколков
+    this.shardT -= dt;
+    if (this.shardT <= 0 && tg && !this.storm) {
+      this.shardT = this.phase === 1 ? 1.7 : 1.25;
+      const gx = this.x + Math.cos(this.gunA) * 16, gy = this.y + Math.sin(this.gunA) * 16;
+      for (const o of [-0.2, 0, 0.2]) enemyShot(gx, gy, this.gunA + o, 140, { kind: 'ice', size: 4 });
+      Sound.play('eshoot');
+    }
+    // метель: спираль осколков
+    this.stormT -= dt;
+    if (this.stormT <= 0 && !this.storm) { this.storm = { t: 0, e: 0 }; this.stormT = this.phase === 1 ? 7 : 5.5; }
+    if (this.storm) {
+      const S = this.storm;
+      S.t += dt; S.e -= dt;
+      if (S.e <= 0) {
+        S.e = 0.08;
+        const arms = this.phase === 1 ? 2 : 3;
+        for (let k = 0; k < arms; k++) enemyShot(this.x, this.y, S.t * 3.2 + k / arms * Math.PI * 2, 80, { kind: 'ice', size: 4 });
+        Sound.play('eshoot');
+      }
+      if (S.t > 2.2) this.storm = null;
+    }
+    // сосульки с неба: метки под игроками
+    this.rainT -= dt;
+    if (this.rainT <= 0) {
+      this.rainT = this.phase === 1 ? 5 : 3.8;
+      const alive = G.players.filter(p => !p.dead);
+      for (let k = 0; k < (this.phase === 1 ? 3 : 5) && alive.length; k++) {
+        const p = alive[k % alive.length], ix = clamp(p.cx + rand(-34, 34), 8, FW - 8), iy = clamp(p.cy + rand(-34, 34), 8, FH - 8);
+        G.mortars.push(new Mortar(ix, -10, ix, iy, 1.2 + k * 0.12, { r: 12, h: 0, pal: ICE_COLS, col: '#a4e4fc' }));
+        later(1.2 + k * 0.12, () => this.frost(ix, iy, 12));
+      }
+      Sound.play('mortar');
+    }
+    // вторая фаза: кристаллы щита срываются с орбиты и летят в цель
+    if (this.phase === 2 && this.crystals.length) {
+      this.volleyT -= dt;
+      if (this.volleyT <= 0 && tg) {
+        this.volleyT = 8;
+        for (const c of this.crystals) {
+          const a = angleTo(c.x, c.y, tg.cx, tg.cy);
+          G.bullets.push(new Bullet(c.x, c.y, Math.cos(a) * 115, Math.sin(a) * 115, 'enemy', null, { kind: 'ice', size: 6, hp: 1, cancel: false, homing: 1.2, life: 4 }));
+        }
+        this.crystals = []; this.regrowT = 4;
+        Sound.play('missile');
+      }
+    }
+  }
+  drawGround(g) {
+    const P = BOSS_PALS.cryo, S = BossGfx.cryo(), fl = this.flash > 0;
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + i * Math.PI / 2, ph = Math.sin(this.walk + (i % 2) * Math.PI) * 4;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const hx = this.x + ca * 10, hy = this.y + sa * 10;
+      const kx = this.x + ca * 22 - sa * ph, ky = this.y + sa * 22 + ca * ph;
+      const fx = this.x + ca * 29 - sa * ph * 1.5, fy = this.y + sa * 29 + ca * ph * 1.5;
+      pline(g, hx, hy, kx, ky, P.k, 5); pline(g, hx, hy, kx, ky, fl ? '#fcfcfc' : P.m, 3);
+      pline(g, kx, ky, fx, fy, P.k, 4); pline(g, kx, ky, fx, fy, fl ? '#fcfcfc' : P.l, 2);
+      disc(g, kx, ky, 3, P.k); disc(g, kx, ky, 2, P.l); disc(g, fx, fy, 3, P.d);
+    }
+    g.drawImage((fl ? S.w : S.n)[Math.floor(this.t * 4) % 2], Math.round(this.x) - 20, Math.round(this.y) - 20);
+    const gx = this.x + Math.cos(this.gunA) * 17, gy = this.y + Math.sin(this.gunA) * 17;
+    pline(g, this.x, this.y, gx, gy, P.k, 5); pline(g, this.x, this.y, gx, gy, fl ? '#fcfcfc' : P.l, 3);
+    rect(g, Math.round(gx) - 1, Math.round(gy) - 1, 2, 2, P.w);
+    if (this.phase === 2) circle(g, this.x, this.y, 21, Math.floor(this.t * 8) % 2 ? '#a4e4fc' : '#3cbcfc', 3);
+  }
+  drawAir(g) {
+    for (const c of this.crystals) {
+      const x = Math.round(c.x), y = Math.round(c.y), fl = c.flash > 0;
+      rect(g, x - 2, y - 5, 5, 11, '#003c8c'); rect(g, x - 4, y - 2, 9, 5, '#003c8c');
+      rect(g, x - 1, y - 4, 3, 9, fl ? '#fcfcfc' : '#3cbcfc'); rect(g, x - 3, y - 1, 7, 3, fl ? '#fcfcfc' : '#3cbcfc');
+      rect(g, x, y - 3, 1, 4, '#f0fcff');
+    }
+  }
+}
+
+// ------------------------------------------------------------
+//  7. СКОРПИОН — лобовая броня (бить в бок, спину и жало), рывок, кислота
+// ------------------------------------------------------------
+class Scorpion extends Boss {
+  constructor(scale) {
+    super('СКОРПИОН', Math.round(100 * scale));
+    this.x = FW / 2; this.y = -30; this.a = Math.PI / 2; this.state = 'enter'; this.walk = 0;
+    this.snapT = 1; this.clawT = 0; this.lungeT = 5; this.lunge = null; this.acidT = 3; this.stingT = 4.5; this.sting = 0;
+    this.minionT = 12; this.tgtT = 0; this.tgx = FW / 2; this.tgy = FH / 2; this.pools = []; this.msgT = 0;
+  }
+  world(lx, ly) { const c = Math.cos(this.a), s = Math.sin(this.a); return { x: this.x + lx * c - ly * s, y: this.y + lx * s + ly * c }; }
+  tailPts() {
+    const pts = [];
+    let px = -14, py = 0, ang = Math.PI + Math.sin(this.t * 2) * 0.25;
+    for (let i = 0; i < 6; i++) { px += Math.cos(ang) * 6; py += Math.sin(ang) * 6; ang += 0.38; pts.push(this.world(px, py)); }
+    return pts;
+  }
+  aim() { return this.world(-4, 0); }
+  bounds() { return { x: this.x - 28, y: this.y - 28, w: 56, h: 56 }; }
+  blocks(x, y, w, h) { return this.alive && !this.dying && overlap(x, y, w, h, this.x - 14, this.y - 14, 28, 28); }
+  hitTest(x, y, h) {
+    if (!this.active) return null;
+    const P = this.tailPts(), tip = P[P.length - 1];
+    if (dist(x, y, tip.x, tip.y) < 5 + h) return 'tail';
+    for (const s of [-1, 1]) { const c = this.world(24, s * 13); if (dist(x, y, c.x, c.y) < 7 + h) return 'armor'; }
+    if (dist(x, y, this.x, this.y) > 17 + h) return null;
+    return (x - this.x) * Math.cos(this.a) + (y - this.y) * Math.sin(this.a) > 5 ? 'armor' : 'body';
+  }
+  damage(dmg, part) {
+    if (!this.active || this.dying) return 'reflect';
+    if (part === 'armor') {
+      if (this.msgT <= 0) { this.msgT = 1.2; G.popups.push(new Popup(this.x, this.y - 26, 'БРОНЯ', '#a8a8a8')); }
+      return 'reflect';
+    }
+    if (part === 'tail') {
+      if (this.msgT <= 0) { this.msgT = 0.8; G.popups.push(new Popup(this.x, this.y - 26, '×2', '#fcd820')); }
+      return super.damage(dmg * 2);
+    }
+    return super.damage(dmg);
+  }
+  move(dx, dy, dmg) {
+    const nx = this.x + dx, ny = this.y + dy;
+    if (nx < 16 || ny < 16 || nx > FW - 16 || ny > FH - 16) return false;
+    if (!this.pushPlayers(nx - 14, ny - 14, 28, 28, dx, dy, dmg)) return false;
+    this.x = nx; this.y = ny; this.walk += Math.hypot(dx, dy) * 0.35;
+    if (G.level.destroyCircle(this.x + Math.cos(this.a) * 8, this.y + Math.sin(this.a) * 8, 15, false)) Sound.play('brick');
+    return true;
+  }
+  update(dt) {
+    this.t += dt; this.flash -= dt; this.msgT -= dt; this.clawT -= dt;
+    if (this.dying) return this.updateDeath(dt);
+    if (this.state === 'enter') {
+      this.y += 40 * dt; this.walk += dt * 10;
+      if (this.y > 0) G.level.destroyCircle(this.x, this.y, 18, false);
+      if (this.y >= 52) { this.state = 'fight'; this.active = true; }
+      return;
+    }
+    if (this.phase === 1 && this.hp < this.maxHp * 0.5) { this.phase = 2; this.lungeT = 1.5; G.banner('СКОРПИОН: ЯДОВИТАЯ ЯРОСТЬ!', '#8cd800'); Sound.play('roar'); }
+    // кислотные лужи
+    for (const q of this.pools) {
+      q.t -= dt;
+      for (const p of G.players) if (!p.dead && dist(q.x, q.y, p.cx, p.cy) < q.r) p.hurt(1);
+    }
+    this.pools = this.pools.filter(q => q.t > 0);
+    const tg = G.nearestPlayer(this.x, this.y);
+    if (this.lunge) {
+      const L = this.lunge;
+      L.t += dt;
+      if (L.t < L.wind) {
+        if (tg) this.a += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.a), -4 * dt, 4 * dt);
+        G.shake = Math.max(G.shake, 1);
+        return;
+      }
+      if (!L.go) { L.go = true; Sound.play('dash'); }
+      const sp = 190 * dt;
+      this.walk += dt * 6;
+      if (!this.move(Math.cos(this.a) * sp, Math.sin(this.a) * sp, 2) || L.t > L.wind + 0.6) {
+        this.lunge = null; this.clawT = 0.3; G.shake = 4;
+        this.lungeT = this.phase === 1 ? rand(5, 6.5) : rand(3.5, 4.5);
+        const f = this.world(26, 0);
+        explode(f.x, f.y, 12, { hurtPlayers: true });
+      }
+      return;
+    }
+    this.tgtT -= dt;
+    if (this.tgtT <= 0) {
+      if (tg && Math.random() < 0.7) { this.tgx = tg.cx; this.tgy = tg.cy; } else { this.tgx = rand(40, FW - 40); this.tgy = rand(40, FH - 40); }
+      this.tgtT = rand(1.5, 2.5);
+    }
+    this.a += clamp(normA(angleTo(this.x, this.y, this.tgx, this.tgy) - this.a), -2 * dt, 2 * dt);
+    if (dist(this.x, this.y, this.tgx, this.tgy) > 26) {
+      const sp = (this.phase === 1 ? 34 : 46) * dt;
+      if (!this.move(Math.cos(this.a) * sp, Math.sin(this.a) * sp, 1)) this.tgtT = 0;
+    }
+    // клешни щёлкают по всем, кто перед мордой
+    this.snapT -= dt;
+    if (this.snapT <= 0) {
+      const f = this.world(28, 0);
+      if (G.players.some(p => !p.dead && dist(f.x, f.y, p.cx, p.cy) < 18)) {
+        this.snapT = 1.1; this.clawT = 0.25; Sound.play('hit');
+        for (const p of G.players) if (!p.dead && dist(f.x, f.y, p.cx, p.cy) < 18) p.hurt(1);
+      }
+    }
+    // плевок кислотой навесом: на месте падения остаётся лужа
+    const P = this.tailPts(), tip = P[P.length - 1];
+    this.acidT -= dt;
+    if (this.acidT <= 0 && tg) {
+      this.acidT = this.phase === 1 ? 3.2 : 2.3;
+      for (let k = 0; k < (this.phase === 1 ? 1 : 2); k++) {
+        const ax = clamp(tg.cx + (k ? rand(-40, 40) : rand(-10, 10)), 10, FW - 10), ay = clamp(tg.cy + (k ? rand(-40, 40) : rand(-10, 10)), 10, FH - 10);
+        G.mortars.push(new Mortar(tip.x, tip.y, ax, ay, 1.0, { r: 12, h: 40, pal: ACID_COLS, col: '#8cd800' }));
+        later(1.0, () => { if (this.alive && !this.dying) this.pools.push({ x: ax, y: ay, r: 13, t: 5, max: 5 }); });
+      }
+      Sound.play('mortar');
+    }
+    // жало: веер ядовитых сгустков
+    this.stingT -= dt;
+    if (this.stingT <= 0.5 && this.stingT + dt > 0.5) this.sting = 0.5;
+    if (this.sting > 0) this.sting -= dt;
+    if (this.stingT <= 0 && tg) {
+      this.stingT = this.phase === 1 ? 4.5 : 2.8;
+      const n = this.phase === 1 ? 3 : 5, a = angleTo(tip.x, tip.y, tg.cx, tg.cy);
+      for (let k = 0; k < n; k++) enemyShot(tip.x, tip.y, a + (k - (n - 1) / 2) * 0.22, 105, { kind: 'acid', size: 5 });
+      Sound.play('eshoot');
+    }
+    this.lungeT -= dt;
+    if (this.lungeT <= 0 && tg && dist(this.x, this.y, tg.cx, tg.cy) < 180) { this.lunge = { t: 0, wind: 0.7, go: false }; Sound.play('charge'); }
+    if (this.phase === 2) { this.minionT -= dt; if (this.minionT <= 0) { this.minionT = 14; G.spawnMinions(2, 'fast', this.x, this.y); } }
+  }
+  drawGround(g) {
+    const P = BOSS_PALS.scorp, S = BossGfx.scorp(), fl = this.flash > 0;
+    for (const q of this.pools) {
+      if (q.t < 1 && Math.floor(q.t * 10) % 2) continue;
+      const k = Math.min(1, (q.max - q.t) * 4);
+      ellipse(g, q.x, q.y, Math.max(1, Math.round(q.r * k)), Math.max(1, Math.round(q.r * 0.7 * k)), '#3c6c00');
+      ellipse(g, q.x, q.y, Math.max(1, Math.round((q.r - 3) * k)), Math.max(1, Math.round((q.r - 3) * 0.7 * k)), Math.floor(this.t * 4 + q.x) % 2 ? '#8cd800' : '#6cb800');
+      if (Math.floor(this.t * 6 + q.y) % 3 === 0) rect(g, Math.round(q.x + Math.sin(q.t * 7) * 6), Math.round(q.y + Math.cos(q.t * 5) * 3), 2, 2, '#e8fcb0');
+    }
+    // ноги
+    for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
+      const lx = -9 + i * 6, ph = Math.sin(this.walk + i * 1.6 + (s > 0 ? 0 : Math.PI)) * 3;
+      const h = this.world(lx, s * 8), k = this.world(lx + 2 + ph, s * 17), f = this.world(lx - 2 + ph, s * 23);
+      pline(g, h.x, h.y, k.x, k.y, P.k, 3); pline(g, k.x, k.y, f.x, f.y, P.k, 3);
+      pline(g, h.x, h.y, k.x, k.y, fl ? '#fcfcfc' : P.m, 1); pline(g, k.x, k.y, f.x, f.y, fl ? '#fcfcfc' : P.d, 1);
+      rect(g, Math.round(k.x), Math.round(k.y), 1, 1, P.l);
+    }
+    // тело (перед рывком мигает)
+    const wind = this.lunge && !this.lunge.go && Math.floor(this.t * 16) % 2;
+    g.save();
+    g.translate(Math.round(this.x), Math.round(this.y)); g.rotate(this.a);
+    g.drawImage((fl || wind ? S.w : S.n)[this.clawT > 0 || (this.lunge && this.lunge.go) ? 1 : 0], -26, -20);
+    g.restore();
+    // хвост и жало поверх спины
+    const T = this.tailPts();
+    for (let i = 0; i < T.length; i++) { const p = T[i], r = i < 3 ? 4 : 3; disc(g, p.x, p.y, r, P.k); disc(g, p.x, p.y, r - 1, fl ? '#fcfcfc' : P.m); rect(g, Math.round(p.x) - 1, Math.round(p.y) - 1, 1, 1, P.l); }
+    const tip = T[T.length - 1], pre = T[T.length - 2], ta = angleTo(pre.x, pre.y, tip.x, tip.y);
+    disc(g, tip.x, tip.y, 4, P.k);
+    disc(g, tip.x, tip.y, 3, this.sting > 0 && Math.floor(this.t * 16) % 2 ? '#fcfcfc' : P.e);
+    pline(g, tip.x, tip.y, tip.x + Math.cos(ta) * 6, tip.y + Math.sin(ta) * 6, P.w, 2);
+  }
+}
+
+// ------------------------------------------------------------
+//  8. ФАНТОМ — стелс-прототип: невидимость, телепорт, голограммы-двойники, лазер
+// ------------------------------------------------------------
+class Phantom extends Boss {
+  constructor(scale) {
+    super('ФАНТОМ', Math.round(110 * scale));
+    this.deadText = 'ФАНТОМ УНИЧТОЖЕН';
+    this.x = FW / 2; this.y = 64; this.a = Math.PI / 2; this.alpha = 0; this.state = 'enter'; this.st = 0;
+    this.vx = 0; this.vy = 0; this.tx = this.x; this.ty = this.y; this.moveT = 0;
+    this.cloakT = 6; this.shotT = 1.5; this.burst = 0; this.burstT = 0; this.beam = null; this.beamT = 4.5; this.kamiT = 8;
+    this.decoys = [];
+  }
+  bounds() { return { x: this.x - 16, y: this.y - 16, w: 32, h: 32 }; }
+  hitTest(x, y, h) {
+    if (!this.active) return null;
+    for (const d of this.decoys) if (d.alpha > 0.6 && dist(x, y, d.x, d.y) < 12 + h) return d;
+    if (this.alpha > 0.6 && dist(x, y, this.x, this.y) < 13 + h) return 'body';
+    return null;
+  }
+  damage(dmg, part) {
+    if (!this.active || this.dying) return 'reflect';
+    if (part === 'grenade') { for (const d of this.decoys.slice()) this.popDecoy(d); return this.alpha > 0.6 ? super.damage(dmg) : 'reflect'; }
+    if (part && typeof part === 'object') { if (this.decoys.includes(part)) this.popDecoy(part); return 'ok'; }
+    if (this.alpha <= 0.6) return 'reflect';
+    return super.damage(dmg);
+  }
+  popDecoy(d) {
+    this.decoys.splice(this.decoys.indexOf(d), 1);
+    this.glitch(d.x, d.y, 14);
+    G.effects.push(new RingFx(d.x, d.y, 4, 16, '#f838f8', 0.25));
+    Sound.play('zap');
+  }
+  glitch(x, y, n) {
+    for (let i = 0; i < n && G.particles.length < 450; i++)
+      G.particles.push(new Particle(x + rand(-10, 10), y + rand(-10, 10), rand(-60, 60), rand(-60, 60), rand(0.2, 0.5), pick(['#f838f8', '#38f8f8', '#fcfcfc']), randi(1, 2)));
+  }
+  // точка подальше от игроков
+  spot() {
+    for (let k = 0; k < 40; k++) {
+      const x = rand(30, FW - 30), y = rand(30, FH - 50);
+      if (G.players.every(p => p.dead || dist(p.cx, p.cy, x, y) > 100) && dist(x, y, this.x, this.y) > 40) return { x, y };
+    }
+    return { x: rand(30, FW - 30), y: rand(30, 90) };
+  }
+  update(dt) {
+    this.t += dt; this.flash -= dt;
+    if (this.dying) {
+      this.alpha = 1; this.beam = null;
+      if (this.decoys.length) { for (const d of this.decoys) this.glitch(d.x, d.y, 10); this.decoys = []; }
+      return this.updateDeath(dt);
+    }
+    if (this.phase === 1 && this.hp < this.maxHp * 0.66) { this.phase = 2; this.cloakT = Math.min(this.cloakT, 1); G.banner('ФАНТОМ: ГОЛОГРАММЫ!', '#f838f8'); Sound.play('roar'); }
+    if (this.phase === 2 && this.hp < this.maxHp * 0.33) { this.phase = 3; this.cloakT = Math.min(this.cloakT, 1); G.banner('ФАНТОМ: ПЕРЕГРУЗКА!', '#f83800'); Sound.play('roar'); }
+    const tg = G.nearestPlayer(this.x, this.y);
+    for (const d of this.decoys) this.updateDecoy(d, dt);
+    if (this.state === 'enter') {
+      this.alpha += dt / 1.6;
+      if (Math.random() < 0.5) this.glitch(this.x, this.y, 1);
+      if (this.alpha >= 1) { this.alpha = 1; this.state = 'fight'; this.active = true; }
+      return;
+    }
+    if (this.state === 'fade') {
+      this.alpha -= dt / 0.35;
+      for (const d of this.decoys) d.alpha = Math.min(d.alpha, this.alpha);
+      if (this.alpha <= 0) {
+        this.alpha = 0; this.state = 'hidden'; this.st = 0.5;
+        this.decoys = [];
+        const s = this.spot(); this.x = s.x; this.y = s.y; this.vx = 0; this.vy = 0; this.tx = s.x; this.ty = s.y;
+      }
+      return;
+    }
+    if (this.state === 'hidden') {
+      this.st -= dt;
+      if (this.st <= 0) {
+        this.state = 'appear';
+        const n = this.phase === 1 ? 0 : this.phase === 2 ? 2 : 3;
+        for (let i = 0; i < n; i++) { const s = this.spot(); this.decoys.push({ x: s.x, y: s.y, a: this.a, alpha: 0, tx: s.x, ty: s.y, moveT: 0, shotT: rand(1, 2) }); }
+        this.glitch(this.x, this.y, 8);
+        Sound.play('zap');
+      }
+      return;
+    }
+    if (this.state === 'appear') {
+      this.alpha += dt / 0.35;
+      for (const d of this.decoys) d.alpha = this.alpha;
+      if (this.alpha >= 1) {
+        this.alpha = 1; this.state = 'fight';
+        for (const d of this.decoys) d.alpha = 1;
+        if (this.phase === 3) G.ring(this.x, this.y, 16, 80, rand(0, 1), 'bolt');
+      }
+      return;
+    }
+    // бой: скольжение на антигравах
+    if (tg) this.a += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.a), -3.5 * dt, 3.5 * dt);
+    this.moveT -= dt;
+    if (this.moveT <= 0 && tg) {
+      const a = rand(0, Math.PI * 2), r = rand(70, 130);
+      this.tx = clamp(tg.cx + Math.cos(a) * r, 24, FW - 24); this.ty = clamp(tg.cy + Math.sin(a) * r, 24, FH - 24);
+      this.moveT = rand(1.2, 2.2);
+    }
+    const k = 1.8, damp = 2, hold = this.beam ? 0.15 : 1;
+    this.vx += ((this.tx - this.x) * k - this.vx * damp) * dt; this.vy += ((this.ty - this.y) * k - this.vy * damp) * dt;
+    const maxv = (this.phase === 3 ? 100 : 75) * hold, v = Math.hypot(this.vx, this.vy);
+    if (v > maxv) { this.vx *= maxv / v; this.vy *= maxv / v; }
+    this.x = clamp(this.x + this.vx * dt, 16, FW - 16); this.y = clamp(this.y + this.vy * dt, 16, FH - 16);
+    for (const p of G.players) if (!p.dead && dist(this.x, this.y, p.cx, p.cy) < 16) p.hurt(1);
+    // очереди плазмы
+    this.shotT -= dt;
+    if (this.shotT <= 0 && tg && !this.beam) { this.shotT = [0, 1.8, 1.5, 1.2][this.phase]; this.burst = 3; this.burstT = 0; }
+    if (this.burst > 0) {
+      this.burstT -= dt;
+      if (this.burstT <= 0) {
+        this.burstT = 0.1; this.burst--;
+        if (tg) { enemyShot(this.x + Math.cos(this.a) * 16, this.y + Math.sin(this.a) * 16, angleTo(this.x, this.y, tg.cx, tg.cy), 170, { kind: 'bolt', size: 3 }); Sound.play('eshoot'); }
+      }
+    }
+    // лазер: прицеливание, захват цели, выстрел через всё поле
+    if (!this.beam) {
+      this.beamT -= dt;
+      if (this.beamT <= 0 && tg) { this.beam = { t: 0, charge: 1.0, dur: 0.4, fire: false, a: angleTo(this.x, this.y, tg.cx, tg.cy) }; Sound.play('charge'); }
+    } else {
+      const B = this.beam;
+      B.t += dt;
+      if (!B.fire && B.t < B.charge * 0.55 && tg) B.a += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - B.a), -2 * dt, 2 * dt);
+      this.a = B.a;
+      if (!B.fire && B.t >= B.charge) {
+        B.fire = true; B.t = 0; Sound.play('laser'); G.shake = 4;
+        const c = Math.cos(B.a), s = Math.sin(B.a);
+        for (let r = 16; r < 460; r += 6) G.level.destroyCircle(this.x + c * r, this.y + s * r, 6, false);
+      }
+      if (B.fire) {
+        const c = Math.cos(B.a), s = Math.sin(B.a);
+        const onBeam = (x, y) => { const px = x - this.x, py = y - this.y; return px * c + py * s > 0 && Math.abs(px * s - py * c) < 9; };
+        for (const p of G.players) if (!p.dead && onBeam(p.cx, p.cy)) p.hurt(1);
+        for (const e of G.enemies) if (e.alive && onBeam(e.cx, e.cy)) e.die(null);
+        if (B.t >= B.dur) { this.beam = null; this.beamT = [0, 6, 4.5, 3.5][this.phase]; }
+      }
+    }
+    if (this.phase === 3) { this.kamiT -= dt; if (this.kamiT <= 0) { this.kamiT = 10; G.spawnMinions(2, 'kamikaze', this.x, this.y); } }
+    this.cloakT -= dt;
+    if (this.cloakT <= 0 && !this.beam && !this.burst) { this.state = 'fade'; this.cloakT = [0, 6, 5, 4][this.phase]; Sound.play('shield'); }
+  }
+  updateDecoy(d, dt) {
+    const tg = G.nearestPlayer(d.x, d.y);
+    if (tg) d.a += clamp(normA(angleTo(d.x, d.y, tg.cx, tg.cy) - d.a), -3.5 * dt, 3.5 * dt);
+    if (this.state !== 'fight') return;
+    d.moveT -= dt;
+    if (d.moveT <= 0 && tg) {
+      const a = rand(0, Math.PI * 2), r = rand(70, 130);
+      d.tx = clamp(tg.cx + Math.cos(a) * r, 24, FW - 24); d.ty = clamp(tg.cy + Math.sin(a) * r, 24, FH - 24); d.moveT = rand(1.2, 2.2);
+    }
+    const dd = dist(d.x, d.y, d.tx, d.ty), sp = 55 * dt;
+    if (dd > 1) { d.x += (d.tx - d.x) / dd * Math.min(sp, dd); d.y += (d.ty - d.y) / dd * Math.min(sp, dd); }
+    d.shotT -= dt;
+    if (d.shotT <= 0 && tg) {
+      d.shotT = rand(1.6, 2.4);
+      enemyShot(d.x + Math.cos(d.a) * 16, d.y + Math.sin(d.a) * 16, angleTo(d.x, d.y, tg.cx, tg.cy), 150, { kind: 'bolt', size: 3 });
+      Sound.play('eshoot');
+    }
+  }
+  drawShip(g, x, y, a, alpha, fl) {
+    if (alpha <= 0) return;
+    const S = BossGfx.phantom();
+    g.globalAlpha = alpha < 1 ? alpha * (Math.random() < 0.25 ? 0.4 : 1) : 1;
+    g.save();
+    g.translate(Math.round(x), Math.round(y)); g.rotate(a);
+    g.drawImage((fl ? S.w : S.n)[Math.floor(this.t * 6) % 2], -16, -16);
+    g.restore();
+    if (alpha < 1) for (let i = 0; i < 3; i++) rect(g, Math.round(x - 16 + rand(-4, 4)), Math.round(y + rand(-14, 14)), 32, 1, Math.random() < 0.5 ? '#f838f8' : '#38f8f8');
+    g.globalAlpha = 1;
+  }
+  drawGround(g) {
+    for (const d of this.decoys) if (d.alpha > 0) ellipse(g, d.x + 4, d.y + 10, 12, 4, 'rgba(0,0,0,0.4)');
+    if (this.alpha > 0) ellipse(g, this.x + 4, this.y + 10, 12, 4, 'rgba(0,0,0,0.4)');
+  }
+  drawAir(g) {
+    for (const d of this.decoys) this.drawShip(g, d.x, d.y, d.a, d.alpha, false);
+    this.drawShip(g, this.x, this.y, this.a, this.alpha, this.flash > 0);
+    const B = this.beam;
+    if (!B) return;
+    const c = Math.cos(B.a), s = Math.sin(B.a), x0 = this.x + c * 16, y0 = this.y + s * 16, x1 = this.x + c * 460, y1 = this.y + s * 460;
+    if (!B.fire) {
+      if (Math.floor(B.t * (B.t > B.charge * 0.55 ? 24 : 12)) % 2) pline(g, x0, y0, x1, y1, '#f838f8', 1);
+      disc(g, x0, y0, 2 + B.t * 3, '#f878f8');
+    } else {
+      const w = Math.floor(this.t * 30) % 2;
+      pline(g, x0, y0, x1, y1, '#a000a0', 9 + w * 2); pline(g, x0, y0, x1, y1, '#f878f8', 5); pline(g, x0, y0, x1, y1, '#fcfcfc', 2);
+      disc(g, x0, y0, 6, '#fcfcfc');
+    }
+  }
+}
+
+// у каждого биома два босса: какой выпадет — решает жребий забега, на следующем цикле — другой
+const BOSS_SETS = [['goliath', 'twins'], ['heli', 'cryo'], ['worm', 'scorpion'], ['omega', 'phantom']];
+const BOSS_CLASSES = { goliath: Goliath, heli: Heli, worm: Worm, omega: Omega, twins: Twins, cryo: Cryo, scorpion: Scorpion, phantom: Phantom };
+function makeBoss(id, scale) { return new BOSS_CLASSES[id](scale); }

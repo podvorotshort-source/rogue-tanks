@@ -169,10 +169,38 @@ function genBlocks(biome, opts) {
     cross: () => { const x = randi(1, maxX - 1), y = randi(2, 10); put(x, y, T_BRICK); put(x - 1, y, T_BRICK); put(x + 1, y, T_BRICK); put(x, y - 1, T_BRICK); put(x, y + 1, T_BRICK); if (Math.random() < 0.4) put(x, y, T_STEEL); },
     ell: () => { const x = randi(0, maxX - 2), y = randi(1, 10), t = wall(); for (let i = 0; i < 3; i++) put(x + i, y, t); put(x, y + 1, t); put(x, y + 2, t); },
     halves: () => { const x = randi(0, maxX - 2), y = randi(1, 12), l = randi(2, 5), hv = randi(1, 4); for (let i = 0; i < l; i++) put(x + i, y, T_BRICK, hv); },
+    // --- стальные лабиринты ---
+    // змейка: стальные перекладины с проходом то слева, то справа
+    serpent: () => {
+      const w = randi(4, 6), x = randi(0, Math.max(0, maxX - w + 1)), rows = randi(2, 3), y = randi(1, 12 - rows * 2), flip = Math.random() < 0.5;
+      for (let r = 0; r < rows; r++) for (let i = 0; i < w; i++) if (i !== ((r % 2 === 0) === flip ? 0 : w - 1)) put(x + i, y + r * 2, T_STEEL);
+    },
+    // бастион: стальная коробка, вход — через кирпичные ворота, внутри кусты
+    bastion: () => {
+      const w = 5, h = 4, x = randi(0, Math.max(0, maxX - 3)), y = randi(1, 10 - h);
+      const doors = Math.random() < 0.5 ? [[2, 0], [2, h - 1]] : [[0, 1], [w - 1, 2]];
+      for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+        const edge = xx === 0 || yy === 0 || xx === w - 1 || yy === h - 1;
+        if (edge) put(x + xx, y + yy, doors.some(([dx, dy]) => dx === xx && dy === yy) ? T_BRICK : T_STEEL);
+        else if (Math.random() < 0.5) put(x + xx, y + yy, T_BUSH);
+      }
+    },
+    // лесенка по диагонали: укрытие от огня с двух сторон
+    zigzag: () => {
+      const n = randi(3, 5), x = randi(0, Math.max(0, maxX - n)), y = randi(1, 13 - n), dn = Math.random() < 0.5;
+      for (let i = 0; i < n; i++) { const yy = dn ? y + i : y + n - 1 - i; put(x + i, yy, T_STEEL); put(x + i + 1, yy, i === n - 1 ? T_STEEL : T_BRICK); }
+    },
+    // гребёнка: стальной хребет с зубцами из стали и кирпича — карманы для засад
+    comb: () => {
+      const w = randi(5, 7), x = randi(0, Math.max(0, maxX - w + 1)), y = randi(2, 10), down = Math.random() < 0.5;
+      for (let i = 0; i < w; i++) put(x + i, y, T_STEEL);
+      for (let i = 0; i < w; i += 2) for (let k = 1; k <= 2; k++) put(x + i, down ? y + k : y - k, (i / 2) % 2 ? T_BRICK : T_STEEL);
+    },
   };
   const weights = {
     hwall: 3, vwall: 3, box: 1.3, pillar: 2, pond: 1.1 * b.waterRate, grove: 1.4 * b.bushRate, ice: 0.8 * b.iceRate * (opts.iceMul || 1),
     cross: 1, ell: 1.5, halves: 1.5,
+    serpent: 5 * b.steelRate, bastion: 3.5 * b.steelRate, zigzag: 5 * b.steelRate, comb: 5 * b.steelRate,
   };
   if (opts.weights) Object.assign(weights, opts.weights);
   const n = Math.round(randi(opts.minS || 7, opts.maxS || 10) * (sym ? 1 : 1.7));
@@ -222,8 +250,8 @@ function generateLevel(biome, opts = {}) {
   }
 }
 
-// арены боссов
-function generateBossArena(biome) {
+// арены боссов: рельеф от биома, расчистка и укрытия — под конкретного босса
+function generateBossArena(biome, id) {
   let opts;
   if (biome === 0) opts = { sym: true, minS: 4, maxS: 6, steelMul: 0.3, weights: { pond: 0.3, box: 0.4, ice: 0.2 } };
   else if (biome === 1) opts = { sym: true, minS: 7, maxS: 9, steelMul: 0.4, weights: { box: 1.5, pond: 0.4 } };
@@ -232,13 +260,15 @@ function generateBossArena(biome) {
   for (let attempt = 0; attempt < 60; attempt++) {
     const { B, half } = genBlocks(biome, opts);
     for (let x = 7; x <= 16; x++) for (let y = 13; y <= 14; y++) clearBlock(B, half, x, y);
-    if (biome === 0) for (let x = 8; x <= 15; x++) for (let y = 0; y <= 4; y++) clearBlock(B, half, x, y);
-    if (biome === 2) for (let x = 9; x <= 14; x++) for (let y = 5; y <= 9; y++) clearBlock(B, half, x, y);
-    if (biome === 3) {
+    if (id === 'goliath') for (let x = 8; x <= 15; x++) for (let y = 0; y <= 4; y++) clearBlock(B, half, x, y);
+    if (id === 'twins') for (let x = 6; x <= 17; x++) for (let y = 0; y <= 3; y++) clearBlock(B, half, x, y);
+    if (id === 'worm') for (let x = 9; x <= 14; x++) for (let y = 5; y <= 9; y++) clearBlock(B, half, x, y);
+    if (id === 'cryo' || id === 'scorpion' || id === 'phantom') for (let x = 9; x <= 14; x++) for (let y = 1; y <= 5; y++) clearBlock(B, half, x, y);
+    if (id === 'omega') {
       for (let x = 0; x < BCOLS; x++) for (let y = 0; y <= 5; y++) clearBlock(B, half, x, y);
       for (const x of [3, 4, 19, 20]) B[8 * BCOLS + x] = T_STEEL;
     }
-    if (biome === 0) for (const [x, y] of [[5, 5], [18, 5], [5, 10], [18, 10]]) B[y * BCOLS + x] = T_STEEL;
+    if (id === 'goliath' || id === 'twins' || id === 'phantom') for (const [x, y] of [[5, 5], [18, 5], [5, 10], [18, 10]]) B[y * BCOLS + x] = T_STEEL;
     const d = blockBFS(B, PLAYER_SPAWNS[0][0], PLAYER_SPAWNS[0][1]);
     if (d[PLAYER_SPAWNS[1][1] * BCOLS + PLAYER_SPAWNS[1][0]] < 0 || d[6 * BCOLS + 12] < 0) continue;
     for (let i = 0; i < B.length; i++) if (d[i] < 0 && B[i] !== T_STEEL && B[i] !== T_WATER) B[i] = T_BRICK;

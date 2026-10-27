@@ -20,7 +20,7 @@ const EN = {
   'ЯЗЫК: РУССКИЙ': 'LANGUAGE: ENGLISH',
   'ГЕЙМПАДЫ:': 'GAMEPADS:', 'ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ': 'GAMEPADS: PRESS ANY BUTTON ON A GAMEPAD',
   'РЕКОРД: СЕКТОР': 'BEST: SECTOR', 'ОЧКИ:': 'SCORE:',
-  '4 БИОМА  •  4 БОССА  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ': '4 BIOMES  •  4 BOSSES  •  UP TO 3 PLAYERS: KEYBOARD AND PADS',
+  '4 БИОМА  •  8 БОССОВ  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ': '4 BIOMES  •  8 BOSSES  •  UP TO 3 PLAYERS: KEYBOARD AND PADS',
   'ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ': 'PRESS A KEY OR CLICK FOR SOUND',
   'ПРОБЕЛ / ENTER / КРЕСТ': 'SPACE / ENTER / CROSS',
   'WASD - ЕХАТЬ   ПРОБЕЛ - ОГОНЬ   E - СПЕЦПРИЁМ': 'WASD - MOVE   SPACE - FIRE   E - SPECIAL',
@@ -43,7 +43,8 @@ const EN = {
   'ПРОЧНОСТЬ': 'ARMOR', 'СКОРОСТЬ': 'SPEED', 'ОГОНЬ': 'FIRE', 'СКОРОСТРЕЛ.': 'FIRE RATE', 'УРОН': 'DAMAGE',
   'СПЕЦ:': 'SPEC:', 'СПЕЦПРИЁМ:': 'SPECIAL:', 'ГОТОВ!': 'READY!',
   'ОГОНЬ - ВЫБРАТЬ': 'FIRE - SELECT', 'ОГОНЬ-ВЫБОР  СПЕЦ-ВЫЙТИ': 'FIRE-PICK  SPEC-LEAVE',
-  'ВЛЕВО/ВПРАВО - ТАНК   СПЕЦ - ОТМЕНА   ESC - НАЗАД': 'LEFT/RIGHT - TANK   SPECIAL - CANCEL   ESC - BACK',
+  'ВЛЕВО/ВПРАВО - ТАНК  ВВЕРХ/ВНИЗ - ЦВЕТ  ESC - НАЗАД': 'LEFT/RIGHT - TANK  UP/DOWN - COLOR  ESC - BACK',
+  'ВЛЕВО/ВПРАВО - ТАНК   ВВЕРХ/ВНИЗ - ЦВЕТ   ESC - НАЗАД': 'LEFT/RIGHT - TANK   UP/DOWN - COLOR   ESC - BACK',
   'ESC - НАЗАД': 'ESC - BACK',
   // игра
   'СЕКТОР': 'SECTOR', 'Ц': 'L', 'БИОМ:': 'BIOME:', '!! БОСС !!': '!! BOSS !!',
@@ -77,6 +78,10 @@ const EN = {
   'ГОЛИАФ В ЯРОСТИ!': 'GOLIATH IS ENRAGED!', 'СТРЕКОЗА: ФОРСАЖ!': 'DRAGONFLY: AFTERBURNER!',
   'СКОЛОПЕНДРА ЗАРЫВАЕТСЯ!': 'CENTIPEDE BURROWS!', 'ОМЕГА: КРИТИЧЕСКИЙ РЕЖИМ!': 'OMEGA: CRITICAL MODE!',
   'ЩИТ ЯДРА ОТКЛЮЧЁН!': 'CORE SHIELD DOWN!',
+  'БЛИЗНЕЦЫ': 'TWINS', 'КРИОМЕХ': 'CRYOMECH', 'СКОРПИОН': 'SCORPION', 'ФАНТОМ': 'PHANTOM',
+  'БЛИЗНЕЦ В ЯРОСТИ!': 'TWIN IS ENRAGED!', 'КРИОМЕХ: АБСОЛЮТНЫЙ НОЛЬ!': 'CRYOMECH: ABSOLUTE ZERO!',
+  'СКОРПИОН: ЯДОВИТАЯ ЯРОСТЬ!': 'SCORPION: VENOM RAGE!', 'ФАНТОМ: ГОЛОГРАММЫ!': 'PHANTOM: HOLOGRAMS!',
+  'ФАНТОМ: ПЕРЕГРУЗКА!': 'PHANTOM: OVERLOAD!', 'ФАНТОМ УНИЧТОЖЕН': 'PHANTOM DESTROYED',
   // классы
   'ШТУРМОВИК': 'ASSAULT', 'РАЗВЕДЧИК': 'SCOUT', 'ТЯЖЁЛЫЙ': 'HEAVY',
   'ЗАЛП': 'VOLLEY', '16 СНАРЯДОВ ВО ВСЕ СТОРОНЫ': '16 SHELLS IN ALL DIRECTIONS',
@@ -84,7 +89,10 @@ const EN = {
   'ЩИТ': 'SHIELD', 'НА 3 СЕК. ОТРАЖАЕТ СНАРЯДЫ': 'REFLECTS SHELLS FOR 3 SEC',
   // враги
   'ЛЁГКИЙ': 'LIGHT', 'БЫСТРЫЙ': 'FAST', 'СНАЙПЕР': 'SNIPER', 'БРОНЯ': 'ARMOR', 'ДРОБОВИК': 'SHOTGUN',
-  'МИНОМЁТ': 'MORTAR', 'КАМИКАДЗЕ': 'KAMIKAZE',
+  'МИНОМЁТ': 'MORTAR', 'КАМИКАДЗЕ': 'KAMIKAZE', 'ЩИТОНОСЕЦ': 'SHIELDER', 'ОГНЕМЁТ': 'FLAMER', 'МИНЁР': 'MINER',
+  // цвета игроков
+  'ЖЁЛТЫЙ': 'YELLOW', 'ЗЕЛЁНЫЙ': 'GREEN', 'РОЗОВЫЙ': 'PINK', 'БИРЮЗОВЫЙ': 'TURQUOISE', 'ЛАЙМОВЫЙ': 'LIME',
+  'НЕБЕСНЫЙ': 'SKY', 'СИРЕНЕВЫЙ': 'LILAC', 'ПЕСОЧНЫЙ': 'SAND', 'МЯТНЫЙ': 'MINT', 'ФУКСИЯ': 'FUCHSIA',
   // бонусы
   'КАСКА': 'HELMET', 'ЧАСЫ': 'CLOCK', 'ГРАНАТА': 'GRENADE', 'ЗВЕЗДА': 'STAR', 'РЕМОНТ': 'REPAIR',
   // модификаторы
@@ -105,7 +113,6 @@ const EN = {
   'УДАЧА': 'LUCK', 'БОНУСЫ ИЗ ВРАГОВ ВЫПАДАЮТ ВДВОЕ ЧАЩЕ': 'ENEMIES DROP BONUSES TWICE AS OFTEN',
   'ПОЛЕВОЙ РЕМОНТ': 'FIELD REPAIR', '+1 ПРОЧНОСТЬ ПОСЛЕ КАЖДОГО СЕКТОРА': '+1 ARMOR AFTER EACH SECTOR',
   'КРУПНЫЙ КАЛИБР': 'BIG CALIBER', 'УРОН СНАРЯДОВ +1': 'SHELL DAMAGE +1',
-  'БРОНЕБОЙНЫЕ': 'ARMOR-PIERCING', 'СНАРЯДЫ РАЗРУШАЮТ СТАЛЬ': 'SHELLS DESTROY STEEL',
   'РИКОШЕТ': 'RICOCHET', 'СНАРЯДЫ ОТСКАКИВАЮТ ОТ СТАЛИ И КРАЁВ': 'SHELLS BOUNCE OFF STEEL AND EDGES',
   '+2 СНАРЯДА ВЕЕРОМ ПРИ КАЖДОМ ВЫСТРЕЛЕ': '+2 SHELLS IN A FAN WITH EACH SHOT',
   'ПРОБИТИЕ': 'PIERCING', 'СНАРЯД ПРОШИВАЕТ +1 ЦЕЛЬ НАСКВОЗЬ': 'SHELL PIERCES +1 TARGET',
@@ -134,7 +141,6 @@ const EN = {
   'ВЗРЫВНОЕ ОТРАЖЕНИЕ': 'BLAST REFLECT', 'ОТРАЖЁННЫЕ ЩИТОМ СНАРЯДЫ ВЗРЫВАЮТСЯ': 'SHELLS REFLECTED BY THE SHIELD EXPLODE',
   'СТАЛЬНОЙ ШТОРМ': 'STEEL STORM', 'ЗАЛП ЛОМАЕТ СТАЛЬ И ПРОШИВАЕТ ВРАГОВ': 'VOLLEY BREAKS STEEL AND PIERCES FOES',
   'РАЗРЯДНИК': 'DISCHARGER', 'БЛОК ЭНЕРГОЩИТОМ ВЫЗЫВАЕТ ЭМИ-ВОЛНУ': 'ENERGY SHIELD BLOCK RELEASES AN EMP WAVE',
-  'БУЛЬДОЗЕР': 'BULLDOZER', 'ТАНК ПРОЛАМЫВАЕТ КИРПИЧ НАЕЗДОМ': 'TANK SMASHES THROUGH BRICK',
   'ОСКОЛКИ': 'SHARDS', 'РАЗБИТЫЙ КИРПИЧ РАНИТ ВРАГОВ ОСКОЛКАМИ': 'BROKEN BRICK HITS FOES WITH SHARDS',
   'ОТВЕТНЫЙ ОГОНЬ': 'RETALIATION', 'ПОЛУЧИВ УРОН, ВЫПУСКАЕТ 8 СНАРЯДОВ': 'WHEN HIT, FIRES 8 SHELLS',
   'ВЫЖИДАНИЕ': 'PATIENCE', 'ПОСЛЕ 1.5 С БЕЗ ВЫСТРЕЛОВ СНАРЯД ×3 И НАСКВОЗЬ': 'AFTER 1.5 S WITHOUT FIRING: SHELL ×3 AND PIERCING',

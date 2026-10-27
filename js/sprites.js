@@ -8,17 +8,34 @@ const PALS = {
   p2: { d: '#005c18', m: '#18b030', l: '#a8f058', w: '#effff0' },
   p3: { d: '#982060', m: '#f070b0', l: '#fcc0e0', w: '#fff0f8' },
   basic: { d: '#5c5c5c', m: '#a8a8a8', l: '#e4e4e4', w: '#ffffff' },
-  fast: { d: '#0048c8', m: '#3c9cfc', l: '#a4dcfc', w: '#ffffff' },
-  power: { d: '#4428bc', m: '#8c6cf0', l: '#d0b8fc', w: '#ffffff' },
+  fast: { d: '#0030a0', m: '#2468e0', l: '#80b0fc', w: '#ffffff' },
+  power: { d: '#301890', m: '#6848d0', l: '#b0a0f0', w: '#ffffff' },
   armor: { d: '#18181f', m: '#4a4a5c', l: '#8c8ca4', w: '#d8d8ec' },
   spread: { d: '#882000', m: '#e05c10', l: '#fca050', w: '#fff0d0' },
-  artillery: { d: '#6c0060', m: '#c020b0', l: '#f080e8', w: '#ffe0fc' },
+  artillery: { d: '#4c2c08', m: '#8c5c20', l: '#d0a060', w: '#fff0d0' },
+  shield: { d: '#1c2430', m: '#3c4c60', l: '#8098b0', w: '#e0ecf8' },
+  flamer: { d: '#3c0c00', m: '#8c2c0c', l: '#e06030', w: '#fcd820' },
+  miner: { d: '#2c3010', m: '#5c6424', l: '#9ca450', w: '#e8ecc0' },
   kamikaze: { d: '#880018', m: '#d82838', l: '#fc8080', w: '#ffffff' },
   bonus: { d: '#a00010', m: '#f83800', l: '#fcb0a0', w: '#ffffff' },
   white: { d: '#c0c0c0', m: '#fcfcfc', l: '#fcfcfc', w: '#fcfcfc' },
   wreck: { d: '#141414', m: '#2c2c2c', l: '#484848', w: '#5c5c5c' },
   frozen: { d: '#3c6cac', m: '#8cbcfc', l: '#d0ecff', w: '#ffffff' },
 };
+// цвета на выбор игрокам: ни один не совпадает по тону с врагами (серые, синие, индиго, оранжевые, бурые, красные, тёмные)
+const PLAYER_PALS = [
+  { name: 'ЖЁЛТЫЙ', ui: '#fcd820', d: '#8c5c00', m: '#e8a810', l: '#fce078', w: '#fffbe0' },
+  { name: 'ЗЕЛЁНЫЙ', ui: '#58d854', d: '#005c18', m: '#18b030', l: '#a8f058', w: '#effff0' },
+  { name: 'РОЗОВЫЙ', ui: '#f878c0', d: '#982060', m: '#f070b0', l: '#fcc0e0', w: '#fff0f8' },
+  { name: 'БИРЮЗОВЫЙ', ui: '#30d8c8', d: '#005850', m: '#10b0a0', l: '#80f0e0', w: '#e8fffc' },
+  { name: 'ЛАЙМОВЫЙ', ui: '#b0f020', d: '#3c5c00', m: '#90d000', l: '#d8fc70', w: '#f8ffe0' },
+  { name: 'НЕБЕСНЫЙ', ui: '#40d8f8', d: '#005878', m: '#20c0e8', l: '#a0f0fc', w: '#f0fcff' },
+  { name: 'СИРЕНЕВЫЙ', ui: '#d0a0fc', d: '#6c3c98', m: '#c088f0', l: '#ecd0fc', w: '#fcf4ff' },
+  { name: 'ПЕСОЧНЫЙ', ui: '#ecd488', d: '#7c6430', m: '#e0c070', l: '#fcf0c0', w: '#fffcf0' },
+  { name: 'МЯТНЫЙ', ui: '#70f0b0', d: '#1c7048', m: '#50e098', l: '#c0fce0', w: '#f0fff8' },
+  { name: 'ФУКСИЯ', ui: '#f060fc', d: '#800090', m: '#e030f0', l: '#f8a0fc', w: '#fff0ff' },
+];
+PLAYER_PALS.forEach((p, i) => { PALS['pc' + i] = p; });
 
 // поворот спрайта на d четвертей по часовой (без интерполяции)
 function rotCanvas(src, d) {
@@ -40,7 +57,8 @@ function rotCanvas(src, d) {
 const rot4 = src => [0, 1, 2, 3].map(d => rotCanvas(src, d));
 
 // ---------- танки 16x16 (рисуются стволом вверх) ----------
-function paintTank(g, shape, c, f) {
+// lv — внешний вид прокачки игрока звёздами (0..5): дульный тормоз, накладки, антенна, звезда, золотая окантовка
+function paintTank(g, shape, c, f, lv = 0) {
   const R = (x, y, w, h, col) => rect(g, x, y, w, h, col);
   let tw = 4, ty = 1, th = 15, hx = 3, hy = 3, hw = 10, hh = 11, tur = 6;
   const tcy = 9;
@@ -66,6 +84,9 @@ function paintTank(g, shape, c, f) {
     case 'armor': R(6, 0, 4, tTop + 1, c.d); R(7, 0, 2, tTop + 1, c.l); R(7, 0, 2, 1, c.w); break;
     case 'artillery': R(5, 1, 6, tTop, c.d); R(6, 1, 4, tTop, c.l); R(6, 1, 4, 1, c.d); R(7, 1, 2, 1, '#000'); break;
     case 'kamikaze': break;
+    case 'shield': R(7, 2, 2, tTop, c.l); R(8, 2, 1, tTop, c.m); R(1, 0, 14, 2, c.d); R(2, 0, 12, 1, c.w); R(1, 1, 1, 1, c.l); R(14, 1, 1, 1, c.l); break;
+    case 'flamer': R(6, 0, 4, 2, c.d); R(7, 0, 2, tTop + 1, c.l); R(7, 0, 2, 1, c.w); R(4, 11, 3, 4, c.d); R(9, 11, 3, 4, c.d); R(5, 12, 1, 2, c.w); R(10, 12, 1, 2, c.w); break;
+    case 'miner': R(7, 1, 2, tTop, c.l); R(8, 1, 1, tTop, c.m); R(4, 12, 8, 3, c.d); for (const x of [5, 8, 10]) R(x, 13, 1, 1, '#f83800'); break;
     default: R(7, 0, 2, tTop + 1, c.l); R(8, 0, 1, tTop + 1, c.m); R(7, 0, 2, 1, c.w);
   }
   // башня
@@ -81,15 +102,20 @@ function paintTank(g, shape, c, f) {
     R(6, 0, 4, hy, c.l); R(7, 0, 2, 1, c.w);
     R(6, 7, 4, 3, c.d); R(7, 8, 2, 1, c.w);
   }
+  if (lv >= 1) { R(6, 0, 4, 2, c.d); R(6, 0, 4, 1, c.w); } // дульный тормоз
+  if (lv >= 2) { R(0, ty, 1, th, c.l); R(15, ty, 1, th, c.l); R(0, ty, tw, 1, c.w); R(16 - tw, ty, tw, 1, c.w); } // бортовые экраны
+  if (lv >= 3) { R(hx + hw - 2, hy + hh - 8, 1, 6, '#202020'); R(hx + hw - 2, hy + hh - 9, 1, 2, '#f83800'); R(hx + 1, hy + hh - 4, 2, 2, c.w); } // антенна и фара
+  if (lv >= 4) { R(7, hy + hh - 3, 2, 1, '#fcd820'); R(6, hy + hh - 2, 4, 1, '#fcd820'); } // звезда на корме
+  if (lv >= 5) { R(hx, hy, hw, 1, '#fcd820'); R(hx, hy, 1, hh, '#fcd820'); R(hx + hw - 1, hy, 1, hh, '#a87800'); R(hx, hy + hh - 1, hw, 1, '#a87800'); } // золото
 }
 
 const TankGfx = {
   cache: new Map(),
-  get(shape, pal) {
-    const key = shape + '|' + pal;
+  get(shape, pal, lv = 0) {
+    const key = shape + '|' + pal + '|' + lv;
     let s = this.cache.get(key);
     if (!s) {
-      s = [0, 1].map(f => { const c = mk(16, 16, true); paintTank(c.getContext('2d'), shape, PALS[pal], f); return rot4(c); });
+      s = [0, 1].map(f => { const c = mk(16, 16, true); paintTank(c.getContext('2d'), shape, PALS[pal], f, lv); return rot4(c); });
       this.cache.set(key, s);
     }
     return s;
@@ -213,7 +239,13 @@ const BOSS_PALS = {
   heli: { k: '#0c1018', d: '#283048', m: '#4c5c84', l: '#8c9cc8', w: '#e0e8ff', glass: '#30c0f0', r: '#f83800', y: '#fcd820' },
   worm: { k: '#100818', d: '#3c1c54', m: '#7040a0', l: '#b080e0', w: '#f8e8ff', eye: '#fc3800' },
   omega: { k: '#08080c', d: '#202028', m: '#3c3c4c', l: '#787890', w: '#c8c8e0', r: '#d82800', y: '#e8b800' },
+  twinA: { k: '#100808', d: '#4c1010', m: '#a02818', l: '#e86040', w: '#fcc8a0', r: '#fcd820' },
+  twinB: { k: '#080c14', d: '#102850', m: '#1c58b0', l: '#4c9cf8', w: '#c8e8fc', r: '#fcd820' },
+  cryo: { k: '#0c1424', d: '#1c3c6c', m: '#3c78b8', l: '#a4e4fc', w: '#f0fcff', e: '#3cbcfc' },
+  scorp: { k: '#140800', d: '#4c2808', m: '#9c6018', l: '#e0a840', w: '#fce8b0', e: '#30fc30' },
+  phantom: { k: '#08080c', d: '#2c2c44', m: '#50506c', l: '#8c8cb0', w: '#d0d0f0', g: '#f838f8', c: '#38f8f8' },
 };
+const ACID_COLS = ['#ffffff', '#e8fcb0', '#b8f840', '#8cd800', '#4c9800', '#1c4c00', '#0c2800'];
 const whitePal = p => { const o = {}; for (const k in p) o[k] = (k === 'k') ? '#a0a0a0' : '#fcfcfc'; return o; };
 
 function paintGoliath(g, c, f) {
@@ -294,8 +326,93 @@ function paintOmega(g, c, f) {
   for (const t of OMEGA_TURRETS) { rect(g, t.ox - 1, t.oy - 1, 18, 18, c.k); rect(g, t.ox, t.oy, 16, 16, c.d); }
 }
 
+// средний танк Близнецов 32x32, ствол вверх
+function paintTwin(g, c, f) {
+  for (const tx of [0, 25]) {
+    rect(g, tx, 2, 7, 29, c.k);
+    for (let y = 2; y < 31; y++) if (((y + f * 2) % 4) < 2) rect(g, tx + 1, y, 5, 1, c.d);
+  }
+  rect(g, 5, 6, 22, 22, c.d); rect(g, 6, 7, 20, 20, c.m);
+  rect(g, 6, 7, 20, 1, c.l); rect(g, 6, 7, 1, 20, c.l); rect(g, 7, 25, 18, 2, c.d);
+  for (let x = 9; x < 24; x += 3) rect(g, x, 22, 2, 3, c.k);
+  disc(g, 16, 17, 7, c.k); disc(g, 16, 17, 6, c.l); disc(g, 15, 16, 3, c.w);
+  rect(g, 14, 0, 4, 12, c.k); rect(g, 15, 0, 2, 12, c.l);
+  rect(g, 13, 0, 6, 3, c.k); rect(g, 14, 0, 4, 2, c.m);
+  rect(g, 8, 9, 2, 2, c.r); rect(g, 22, 9, 2, 2, c.r);
+}
+
+// корпус Криомеха 40x40 (ноги и пушка рисуются отдельно)
+function paintCryo(g, c, f) {
+  disc(g, 20, 20, 15, c.k); disc(g, 20, 20, 14, c.d); disc(g, 19, 19, 12, c.m);
+  rect(g, 11, 10, 8, 3, c.l); rect(g, 10, 13, 3, 6, c.l);
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 + 0.3, x = Math.round(20 + Math.cos(a) * 10), y = Math.round(20 + Math.sin(a) * 10);
+    rect(g, x - 1, y - 2, 3, 5, c.k); rect(g, x, y - 2, 1, 4, c.l); rect(g, x, y - 1, 1, 1, c.w);
+  }
+  disc(g, 20, 20, 6, c.k); disc(g, 20, 20, 5, f ? c.l : c.e); disc(g, 20, 20, 2, c.w);
+}
+
+// Скорпион 56x40, смотрит вправо; f=1 — клешни сомкнуты
+function paintScorp(g, c, f) {
+  const o = f ? 0 : 2;
+  for (const s of [-1, 1]) {
+    const cy = 20 + s * 13;
+    rect(g, 36, Math.min(20 + s * 6, cy) - 1, 4, Math.abs(cy - 20 - s * 6) + 3, c.k);
+    rect(g, 37, Math.min(20 + s * 6, cy), 2, Math.abs(cy - 20 - s * 6) + 1, c.m);
+    rect(g, 38, cy - 2, 10, 4, c.k); rect(g, 39, cy - 1, 8, 2, c.m);
+    disc(g, 48, cy, 5, c.k); disc(g, 48, cy, 4, c.m); rect(g, 46, cy - 2, 2, 2, c.l);
+    rect(g, 50, cy - 4 - o, 6, 3, c.k); rect(g, 51, cy - 3 - o, 4, 1, c.l);
+    rect(g, 50, cy + 1 + o, 6, 3, c.k); rect(g, 51, cy + 2 + o, 4, 1, c.l);
+  }
+  ellipse(g, 24, 20, 15, 10, c.k); ellipse(g, 24, 20, 14, 9, c.d); ellipse(g, 23, 19, 12, 7, c.m);
+  for (const x of [15, 21, 27]) rect(g, x, 12, 1, 16, c.d);
+  rect(g, 14, 14, 12, 2, c.l);
+  ellipse(g, 38, 20, 6, 7, c.k); ellipse(g, 38, 20, 5, 6, c.m);
+  rect(g, 42, 14, 3, 13, c.l); rect(g, 43, 15, 1, 11, c.w);
+  rect(g, 39, 17, 2, 2, c.e); rect(g, 39, 22, 2, 2, c.e);
+}
+
+// Фантом 32x32, смотрит вправо: угловатый корпус на антигравах
+function paintPhantom(g, c, f) {
+  for (let y = 4; y < 28; y++) { const w = Math.round(26 - Math.abs(y - 16) * 0.9); rect(g, 3, y, w, 1, c.k); if (y > 5 && y < 26) rect(g, 4, y, w - 2, 1, c.d); }
+  rect(g, 6, 9, 14, 1, c.l); rect(g, 5, 10, 1, 12, c.l);
+  rect(g, 4, 15, 18, 2, f ? c.g : c.c);
+  for (const y of [2, 26]) { rect(g, 1, y, 8, 4, c.k); rect(g, 2, y + 1, 6, 2, c.m); rect(g, 2, y === 2 ? y : y + 3, 6, 1, c.c); }
+  disc(g, 15, 16, 5, c.k); disc(g, 15, 16, 4, c.m); rect(g, 14, 14, 2, 2, c.w);
+  rect(g, 18, 15, 14, 3, c.k); rect(g, 19, 16, 12, 1, c.l); rect(g, 30, 15, 2, 3, c.g);
+}
+
 const BossGfx = {
   _c: {},
+  twins() {
+    if (!this._c.twins) {
+      const mkSet = pal => [0, 1].map(f => { const c = mk(32, 32, true); paintTwin(c.getContext('2d'), pal, f); return rot4(c); });
+      const P = [BOSS_PALS.twinA, BOSS_PALS.twinB];
+      this._c.twins = P.map(p => ({ n: mkSet(p), w: mkSet(whitePal(p)) }));
+    }
+    return this._c.twins;
+  },
+  cryo() {
+    if (!this._c.cryo) {
+      const m = pal => [0, 1].map(f => { const c = mk(40, 40); paintCryo(c.getContext('2d'), pal, f); return c; });
+      this._c.cryo = { n: m(BOSS_PALS.cryo), w: m(whitePal(BOSS_PALS.cryo)) };
+    }
+    return this._c.cryo;
+  },
+  scorp() {
+    if (!this._c.scorp) {
+      const m = pal => [0, 1].map(f => { const c = mk(56, 40); paintScorp(c.getContext('2d'), pal, f); return c; });
+      this._c.scorp = { n: m(BOSS_PALS.scorp), w: m(whitePal(BOSS_PALS.scorp)) };
+    }
+    return this._c.scorp;
+  },
+  phantom() {
+    if (!this._c.phantom) {
+      const m = pal => [0, 1].map(f => { const c = mk(32, 32); paintPhantom(c.getContext('2d'), pal, f); return c; });
+      this._c.phantom = { n: m(BOSS_PALS.phantom), w: m(whitePal(BOSS_PALS.phantom)) };
+    }
+    return this._c.phantom;
+  },
   goliath() {
     if (!this._c.goliath) {
       const mkSet = pal => [0, 1].map(f => { const c = mk(48, 48, true); paintGoliath(c.getContext('2d'), pal, f); return rot4(c); });

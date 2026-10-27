@@ -26,12 +26,7 @@ function updateTimers(dt) {
 
 // ---------- цели: враг или босс ('boss') ----------
 const bossLive = () => !!(G.boss && G.boss.alive && !G.boss.dying && G.boss.active);
-function bossAim() {
-  const b = G.boss;
-  if (b instanceof Omega) { const t = b.turrets.find(q => !q.dead); return t ? { x: b.x + t.ox + 8, y: b.y + t.oy + 8 } : { x: b.coreX, y: b.coreY }; }
-  if (b instanceof Goliath) return { x: b.cx, y: b.cy };
-  return { x: b.x, y: b.y };
-}
+const bossAim = () => G.boss.aim();
 const tpos = t => t === 'boss' ? bossAim() : { x: t.cx, y: t.cy };
 const tAlive = t => t === 'boss' ? bossLive() : !!(t && t.alive);
 function findTarget(x, y, range) {
@@ -389,10 +384,6 @@ function drawDrones(p, g) {
 }
 
 // ---------- карты с эффектом ----------
-function dozerAhead(p) { // БУЛЬДОЗЕР
-  const fr = frontStrip(p, 2);
-  if (G.level.destroyRect(fr[0], fr[1], fr[2], fr[3], false).brick) Sound.play('brick');
-}
 function brickShards(b, cells) { // ОСКОЛКИ
   const a0 = Math.atan2(b.vy, b.vx);
   let n = 0;

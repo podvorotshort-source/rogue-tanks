@@ -14,7 +14,6 @@ const PERKS = {
   luck: { name: 'УДАЧА', desc: 'БОНУСЫ ИЗ ВРАГОВ ВЫПАДАЮТ ВДВОЕ ЧАЩЕ', icon: '?', max: 1, apply: s => { s.luck *= 2; } },
   field: { name: 'ПОЛЕВОЙ РЕМОНТ', desc: '+1 ПРОЧНОСТЬ ПОСЛЕ КАЖДОГО СЕКТОРА', icon: '+', max: 2, apply: s => { s.fieldRepair += 1; } },
   damage: { name: 'КРУПНЫЙ КАЛИБР', desc: 'УРОН СНАРЯДОВ +1', icon: '+1', rare: true, max: 2, apply: s => { s.dmg += 1; } },
-  ap: { name: 'БРОНЕБОЙНЫЕ', desc: 'СНАРЯДЫ РАЗРУШАЮТ СТАЛЬ', icon: '#', rare: true, max: 1, apply: s => { s.power = true; } },
   ricochet: { name: 'РИКОШЕТ', desc: 'СНАРЯДЫ ОТСКАКИВАЮТ ОТ СТАЛИ И КРАЁВ', icon: '<>', rare: true, max: 2, apply: s => { s.bounce += 1; } },
   shotgun: { name: 'ДРОБОВИК', desc: '+2 СНАРЯДА ВЕЕРОМ ПРИ КАЖДОМ ВЫСТРЕЛЕ', icon: '\\|/', rare: true, max: 1, apply: s => { s.spread = true; } },
   pierce: { name: 'ПРОБИТИЕ', desc: 'СНАРЯД ПРОШИВАЕТ +1 ЦЕЛЬ НАСКВОЗЬ', icon: '-→', rare: true, max: 2, apply: s => { s.pierce += 1; } },
@@ -47,11 +46,10 @@ const PERKS = {
   deton: { name: 'ДЕТОНАТОР', desc: 'ВЗРЫВЫ ПОДРЫВАЮТ ВАШИ МИНЫ, МИНЫ ×1.5', icon: '*●', legend: true, parts: ['explosive', 'mines'] },
   mtrail: { name: 'МИННЫЙ СЛЕД', desc: 'РЫВОК ОСТАВЛЯЕТ ЦЕПОЧКУ МИН', icon: '→●', legend: true, parts: ['mines'], cls: 'scout' },
   reflectx: { name: 'ВЗРЫВНОЕ ОТРАЖЕНИЕ', desc: 'ОТРАЖЁННЫЕ ЩИТОМ СНАРЯДЫ ВЗРЫВАЮТСЯ', icon: '()*', legend: true, parts: ['explosive'], cls: 'heavy' },
-  steelstorm: { name: 'СТАЛЬНОЙ ШТОРМ', desc: 'ЗАЛП ЛОМАЕТ СТАЛЬ И ПРОШИВАЕТ ВРАГОВ', icon: '*#', legend: true, parts: ['ap'], cls: 'assault' },
+  steelstorm: { name: 'СТАЛЬНОЙ ШТОРМ', desc: 'ЗАЛП ЛОМАЕТ СТАЛЬ И ПРОШИВАЕТ ВРАГОВ', icon: '*#', legend: true, parts: ['pierce'], cls: 'assault' },
   disch: { name: 'РАЗРЯДНИК', desc: 'БЛОК ЭНЕРГОЩИТОМ ВЫЗЫВАЕТ ЭМИ-ВОЛНУ', icon: '()⚡', legend: true, parts: ['eshield', 'tesla'] },
 
   // карты с особым эффектом
-  dozer: { name: 'БУЛЬДОЗЕР', desc: 'ТАНК ПРОЛАМЫВАЕТ КИРПИЧ НАЕЗДОМ', icon: '→#', max: 1 },
   shards: { name: 'ОСКОЛКИ', desc: 'РАЗБИТЫЙ КИРПИЧ РАНИТ ВРАГОВ ОСКОЛКАМИ', icon: '∴', max: 1 },
   retal: { name: 'ОТВЕТНЫЙ ОГОНЬ', desc: 'ПОЛУЧИВ УРОН, ВЫПУСКАЕТ 8 СНАРЯДОВ', icon: '<•>', rare: true, max: 1 },
   wait: { name: 'ВЫЖИДАНИЕ', desc: 'ПОСЛЕ 1.5 С БЕЗ ВЫСТРЕЛОВ СНАРЯД ×3 И НАСКВОЗЬ', icon: '⌛', rare: true, max: 1 },
@@ -75,7 +73,7 @@ const MODS = [
 const G = {
   state: 'title', time: 0, players: [], enemies: [], bullets: [], mortars: [], pickups: [], effects: [], particles: [],
   popups: [], spawners: [], tanks: [], queue: [], boss: null, level: null, depth: 1, freeze: 0, shake: 0, flashT: 0,
-  mines: [], fires: new Map(), timers: [],
+  mines: [], fires: new Map(), timers: [], bossAlt: [0, 0, 0, 0],
   bannerT: 0, bannerText: '', bannerCol: '#fff', menuSel: 0, paused: false, pauseSel: 0, scoreMul: 1, dropChance: 0.06,
   enemyMods: { hp: 0, speed: 1, fire: 1, hunt: 0.2, loop: 0, depth: 1 }, killedCount: 0, best: Store.get('tanks_rogue_best', { depth: 0, score: 0 }),
 
@@ -167,6 +165,9 @@ function enemyPool(d) {
     spread: d >= 5 ? 2.5 + d * 0.15 : 0,
     artillery: d >= 9 ? 2 + d * 0.1 : 0,
     kamikaze: d >= 13 ? 3 : 0,
+    shield: d >= 4 ? 1.5 + d * 0.15 : 0,
+    flamer: d >= 6 ? 1.5 + d * 0.12 : 0,
+    miner: d >= 7 ? 1.2 + d * 0.1 : 0,
   };
 }
 
@@ -194,9 +195,10 @@ function updateFlow() {
 
 // ---------- забег ----------
 // ctrls — устройство каждого игрока; в одиночной игре — все устройства сразу
-function newRun(classes, ctrls) {
-  G.players = classes.map((c, i) => new Player(i, c, classes.length > 1 && ctrls ? ctrls[i] : ALL_CTRL));
+function newRun(classes, ctrls, colors) {
+  G.players = classes.map((c, i) => new Player(i, c, classes.length > 1 && ctrls ? ctrls[i] : ALL_CTRL, colors ? colors[i] : i));
   G.depth = 1; G.runTime = 0; G.newRecord = false;
+  G.bossAlt = BOSS_SETS.map(() => randi(0, 1)); // какой из двух боссов биома встретится в этом забеге
   startSector();
 }
 
@@ -206,7 +208,8 @@ function startSector() {
   const d = (G.depth - 1) % 16 + 1, L = info.loop, extra = G.players.length - 1; // доп. игроки: +враги, +прочность боссов
   G.mod = (!info.boss && G.depth >= 2 && Math.random() < 0.45) ? pick(MODS) : null;
   const mod = G.mod ? G.mod.id : '';
-  G.level = info.boss ? generateBossArena(info.biome) : generateLevel(info.biome, { sideSpawns: d >= 5, iceMul: mod === 'ice' ? 4 : 1 });
+  const bossId = info.boss ? BOSS_SETS[info.biome][(G.bossAlt[info.biome] + L) % 2] : null;
+  G.level = info.boss ? generateBossArena(info.biome, bossId) : generateLevel(info.biome, { sideSpawns: d >= 5, iceMul: mod === 'ice' ? 4 : 1 });
   G.enemies = []; G.bullets = []; G.mortars = []; G.pickups = []; G.effects = []; G.particles = []; G.popups = []; G.spawners = [];
   G.mines = []; G.fires = new Map(); G.timers = [];
   G.boss = null; G.freeze = 0; G.shake = 0; G.flashT = 0; G.bannerT = 0; G.killedCount = 0; G.flowT = 0; G.barrageT = 3;
@@ -238,7 +241,7 @@ function startSector() {
   } else {
     G.total = 0;
     const tough = info.biome === 0 ? 1 : 1.5 * (1 + 0.04 * power);
-    G.boss = makeBoss(info.biome, (1 + 0.6 * extra) * (1 + 0.5 * L) * tough);
+    G.boss = makeBoss(bossId, (1 + 0.6 * extra) * (1 + 0.5 * L) * tough);
   }
   G.tanks = G.players.slice();
   G.state = 'intro'; G.introT = 0;
@@ -334,7 +337,7 @@ function updateTitle() {
     if (G.menuSel === MENU_HELP) { G.state = 'help'; return; }
     G.nPlayers = G.menuSel + 1;
     // слоты игроков: dev — индекс в DEVICES (null — ещё никто не вошёл), в одиночной игре сразу «любое устройство»
-    G.sel = { slots: Array.from({ length: G.nPlayers }, () => ({ dev: G.nPlayers === 1 ? 'all' : null, cls: 0, ready: false, t: 1 })), t: 0, goT: 0 };
+    G.sel = { slots: Array.from({ length: G.nPlayers }, (_, i) => ({ dev: G.nPlayers === 1 ? 'all' : null, cls: 0, col: i, ready: false, t: 1 })), t: 0, goT: 0 };
     G.state = 'select';
   }
 }
@@ -357,13 +360,22 @@ function updateSelect(dt) {
     if (sl.ready) { if (Input.hit(c.special)) { sl.ready = false; Sound.play('select'); } continue; }
     if (Input.hit(c.left)) { sl.cls = (sl.cls + CLASS_LIST.length - 1) % CLASS_LIST.length; Sound.play('select'); }
     if (Input.hit(c.right)) { sl.cls = (sl.cls + 1) % CLASS_LIST.length; Sound.play('select'); }
+    if (Input.hit(c.up)) { sl.col = nextColor(sl, -1); Sound.play('select'); }
+    if (Input.hit(c.down)) { sl.col = nextColor(sl, 1); Sound.play('select'); }
     if (Input.hit(c.fire) && sl.t > 0.25 && S.t > 0.25) { sl.ready = true; Sound.play('confirm'); }
     else if (n > 1 && Input.hit(c.special) && sl.t > 0.25) { sl.dev = null; Sound.play('deny'); } // выйти из слота
   }
   if (S.slots.every(s => s.dev !== null && s.ready)) {
     S.goT += dt;
-    if (S.goT > 0.5) newRun(S.slots.map(s => CLASS_LIST[s.cls]), S.slots.map(slotCtrl));
+    if (S.goT > 0.5) newRun(S.slots.map(s => CLASS_LIST[s.cls]), S.slots.map(slotCtrl), S.slots.map(s => s.col));
   } else S.goT = 0;
+}
+// следующий цвет, не занятый другими игроками (одинаковых танков в команде не бывает)
+function nextColor(sl, step) {
+  const n = PLAYER_PALS.length, taken = G.sel.slots.filter(s => s !== sl).map(s => s.col);
+  let c = sl.col;
+  for (let k = 0; k < n; k++) { c = (c + step + n) % n; if (!taken.includes(c)) return c; }
+  return sl.col;
 }
 
 function updateIntro(dt) {
@@ -610,10 +622,10 @@ function drawPlayerHUD(p, x, compact) {
     if (p.stats.eshield) ctx.drawImage(p.eshieldReady ? HEART_SHIELD : HEART_EMPTY, x + 14 + p.maxHp * 8 + 2, 1);
   }
   const C = CLASSES[p.cls], cd = C.cd * p.stats.cdMul, k = p.scd > 0 ? clamp(1 - p.scd / cd, 0, 1) : 1;
-  const bw = compact ? 24 : 32, px = x + bw + 3;
+  const bw = compact ? 20 : 32, px = x + bw + 3, ps = compact ? 3 : 4;
   rect(ctx, x, 9, bw, 4, '#202020');
   rect(ctx, x, 9, Math.round(bw * k), 4, k >= 1 ? (blink(4) ? '#fcfcfc' : p.color) : '#3c78a8');
-  for (let i = 0; i < MAX_WEAPON; i++) rect(ctx, px + i * 5, 9, 4, 4, i < p.weapon ? '#fcd820' : '#2c2c2c');
+  for (let i = 0; i < MAX_WEAPON; i++) rect(ctx, px + i * ps, 9, ps - 1, 4, i < p.weapon ? (i >= 5 ? '#fc9838' : '#fcd820') : '#2c2c2c');
   text(String(p.score).padStart(6, '0'), x + (compact ? 92 : 122), 8, '#d0d0d0', 1, 'right');
 }
 
@@ -745,7 +757,7 @@ function drawTitle() {
   text(pads.length ? tr('ГЕЙМПАДЫ:') + ' ' + pads.map(padName).join(', ') : 'ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ',
     W / 2, 166, pads.length ? '#7c7c7c' : '#3c3c3c', 1, 'center');
   if (G.best.depth > 0) text(tr('РЕКОРД: СЕКТОР') + ' ' + sectorName(G.best.depth) + '   ' + tr('ОЧКИ:') + ' ' + G.best.score, W / 2, 180, '#7c7c7c', 1, 'center');
-  text('4 БИОМА  •  4 БОССА  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ', W / 2, 194, '#3c78a8', 1, 'center');
+  text('4 БИОМА  •  8 БОССОВ  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ', W / 2, 194, '#3c78a8', 1, 'center');
   if (!Sound.ac || Sound.ac.state !== 'running') text('ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ', W / 2, 4, '#545454', 1, 'center');
   // парад танков внизу
   const T = getTiles(0);
@@ -786,10 +798,11 @@ function drawHelp() {
     text(s, x + 18, y + 4, '#bcbcbc');
   });
   text('ВРАГИ', W / 2, 206, '#fcd820', 1, 'center');
-  Object.keys(ENEMY_TYPES).forEach((k, i) => {
-    const T = ENEMY_TYPES[k], x = 8 + i * 53;
-    ctx.drawImage(TankGfx.get(T.shape, T.pal)[0][2], x + 18, 216);
-    text(T.name, x + 26, 236, '#7c7c7c', 1, 'center');
+  const ET = Object.keys(ENEMY_TYPES), step = W / ET.length;
+  ET.forEach((k, i) => {
+    const T = ENEMY_TYPES[k], x = Math.round(step * i + step / 2);
+    ctx.drawImage(TankGfx.get(T.shape, T.pal)[0][2], x - 8, 214);
+    text(T.name, x, i % 2 ? 240 : 232, '#7c7c7c', 1, 'center'); // подписи в шахматном порядке, чтобы не слипались
   });
 }
 
@@ -800,13 +813,13 @@ function drawSelect() {
   const pw = n === 3 ? 122 : 176, py = 30, ph = 200;
   S.slots.forEach((sl, i) => {
     const cx = n === 1 ? W / 2 : n === 2 ? (i === 0 ? W / 4 : W * 3 / 4) : W / 6 + i * W / 3;
-    const px = Math.round(cx - pw / 2), col = PLAYER_COLORS[i], narrow = pw < 150;
+    const px = Math.round(cx - pw / 2), col = PLAYER_PALS[sl.col].ui, narrow = pw < 150;
     rect(ctx, px, py, pw, ph, '#08080c');
     frame(px, py, pw, ph, sl.ready ? col : sl.dev === null ? '#202020' : '#3c3c3c');
     const label = n === 1 ? 'ИГРОК' : (i + 1) + 'P';
     if (sl.dev === null) { // слот ждёт игрока
       text(label, cx, py + 6, col, 1, 'center');
-      ctx.globalAlpha = 0.25; ctx.drawImage(TankGfx.get('std', 'p' + (i + 1))[0][0], cx - 24, py + 32, 48, 48); ctx.globalAlpha = 1;
+      ctx.globalAlpha = 0.25; ctx.drawImage(TankGfx.get('std', 'pc' + sl.col)[0][0], cx - 24, py + 32, 48, 48); ctx.globalAlpha = 1;
       if (blink(2)) text('ОГОНЬ - ВОЙТИ', cx, py + 96, col, 1, 'center');
       wrap('НАЖМИТЕ ОГОНЬ НА СВОЁМ УСТРОЙСТВЕ: ПРОБЕЛ, ENTER, NUM0 ИЛИ КРЕСТ', Math.floor((pw - 8) / 6))
         .forEach((l, k) => text(l, cx, py + 116 + k * 9, '#545454', 1, 'center'));
@@ -815,7 +828,9 @@ function drawSelect() {
     const C = CLASSES[CLASS_LIST[sl.cls]];
     text(tr(label) + (sl.dev === 'all' ? '' : ' - ' + devName(DEVICES[sl.dev])), cx, py + 6, col, 1, 'center');
     text('<  ' + tr(C.name) + '  >', cx, py + 18, '#fcfcfc', 1, 'center');
-    ctx.drawImage(TankGfx.get(C.shape, 'p' + (i + 1))[Math.floor(G.time * 6) % 2][0], cx - 24, py + 32, 48, 48);
+    ctx.drawImage(TankGfx.get(C.shape, 'pc' + sl.col)[Math.floor(G.time * 6) % 2][0], cx - 24, py + 32, 48, 48);
+    for (let k = 0; k < 4; k++) { rect(ctx, cx + 34 - k, py + 42 + k, k * 2 + 1, 1, '#7c7c7c'); rect(ctx, cx + 34 - k, py + 72 - k, k * 2 + 1, 1, '#7c7c7c'); } // стрелки выбора цвета
+    text(PLAYER_PALS[sl.col].name, cx, py + 81, col, 1, 'center');
     const labels = ['ПРОЧНОСТЬ', 'СКОРОСТЬ', narrow ? 'ОГОНЬ' : 'СКОРОСТРЕЛ.', 'УРОН'], bx = narrow ? 60 : 84, step = narrow ? 9 : 13;
     labels.forEach((l, k) => {
       const y = py + 90 + k * 11;
@@ -827,7 +842,7 @@ function drawSelect() {
     if (sl.ready) { if (blink(4)) text('ГОТОВ!', cx, py + 182, col, 1, 'center'); }
     else text(narrow || n === 1 ? 'ОГОНЬ - ВЫБРАТЬ' : 'ОГОНЬ-ВЫБОР  СПЕЦ-ВЫЙТИ', cx, py + 182, '#7c7c7c', 1, 'center');
   });
-  text(n > 1 ? 'ВЛЕВО/ВПРАВО - ТАНК   СПЕЦ - ОТМЕНА   ESC - НАЗАД' : 'ESC - НАЗАД', W / 2, 240, '#3c3c3c', 1, 'center');
+  text(n > 1 ? 'ВЛЕВО/ВПРАВО - ТАНК  ВВЕРХ/ВНИЗ - ЦВЕТ  ESC - НАЗАД' : 'ВЛЕВО/ВПРАВО - ТАНК   ВВЕРХ/ВНИЗ - ЦВЕТ   ESC - НАЗАД', W / 2, 240, '#3c3c3c', 1, 'center');
 }
 
 function drawStats(y) {
@@ -851,7 +866,7 @@ function drawGameOver() {
 function drawVictory() {
   for (let i = 0; i < 40; i++) { const x = (i * 97 + G.time * 20 * (1 + i % 3)) % W, y = (i * 53 + G.time * 30) % H; rect(ctx, x, y, 2, 2, ['#fcd820', '#f83800', '#3cbcfc', '#58d854'][i % 4]); }
   text('ПОБЕДА!', W / 2, 26, '#fcd820', 4, 'center', '#7c4000');
-  text('ЦИТАДЕЛЬ ОМЕГА УНИЧТОЖЕНА', W / 2, 70, '#fcfcfc', 1, 'center');
+  text((G.boss && G.boss.deadText) || 'ЦИТАДЕЛЬ ОМЕГА УНИЧТОЖЕНА', W / 2, 70, '#fcfcfc', 1, 'center');
   text(tr('ЦИКЛ') + ' ' + (sectorInfo(G.depth).loop + 1) + ' ' + tr('ПРОЙДЕН'), W / 2, 82, '#7c7c7c', 1, 'center');
   drawStats(108);
   if (G.overT > 1.5) {
