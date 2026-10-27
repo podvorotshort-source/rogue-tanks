@@ -20,12 +20,19 @@ const NET_BROKERS = [
   'wss://mqtt.eclipseprojects.io:443/mqtt',
 ];
 const NET_QR_LIB = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
-// STUN — узнать свой внешний адрес; TURN — ретранслятор, если напрямую не пробиться (мобильный интернет, строгий NAT)
+// STUN — узнать свой внешний адрес, чтобы соединиться напрямую.
+// TURN (ретранслятор на случай, когда напрямую не пробиться) добавляется в NET_TURN
+const NET_TURN = [];
 const NET_ICE = { iceServers: [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:3478'] },
-  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
-    username: 'openrelayproject', credential: 'openrelayproject' },
+  ...NET_TURN,
 ] };
+// какие пути соединения нашлись: host — локальная сеть, srflx — через интернет напрямую, relay — через ретранслятор
+async function iceReport(pc) {
+  const loc = new Set(), rem = new Set();
+  try { (await pc.getStats()).forEach(r => { if (r.type === 'local-candidate') loc.add(r.candidateType); if (r.type === 'remote-candidate') rem.add(r.candidateType); }); } catch (e) { /* нет статистики */ }
+  return 'ICE ' + pc.iceConnectionState + ' | МОИ: ' + ([...loc].join(',') || '-') + ' | ХОСТА: ' + ([...rem].join(',') || '-');
+}
 const NET_KEYS = ['Up', 'Down', 'Left', 'Right', 'A', 'B', 'Start'];
 const NET_START = ['Escape', 'KeyP', 'TouchStart', ...PAD_STARTS];
 const netId = () => Math.random().toString(36).slice(2, 10);
@@ -265,13 +272,19 @@ const Net = {
       dc.onmessage = m => { let x; try { x = JSON.parse(m.data); } catch (er) { return; } if (x.t === 'hi') this.slot = x.slot; };
       dc.onclose = () => this.fail('СВЯЗЬ С ХОСТОМ ПОТЕРЯНА');
     };
-    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') this.fail('НЕ УДАЛОСЬ СОЕДИНИТЬСЯ С ХОСТОМ'); };
+    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') this.failIce(); };
     try {
       await pc.setRemoteDescription(d.sdp);
       await pc.setLocalDescription(await pc.createAnswer());
       await iceDone(pc);
       this.bus.pub(this.topic('host'), { t: 'answer', g: this.gid, sdp: { type: 'answer', sdp: pc.localDescription.sdp } });
     } catch (e) { this.fail(tr('ОШИБКА СЕТИ') + ' (' + (e.name || 'webrtc') + ')'); }
+  },
+  // не соединились напрямую: показываем, какие пути нашлись, — по ним видно, в чём дело
+  async failIce() {
+    if (this.failed || !this.pc) return;
+    this.diag = await iceReport(this.pc);
+    this.fail('НЕ УДАЛОСЬ СОЕДИНИТЬСЯ С ХОСТОМ');
   },
   fail(msg) {
     if (this.failed) return;
@@ -320,7 +333,13 @@ const Net = {
       if (this.waitT > 20) this.fail('КОМНАТА НЕ НАЙДЕНА');
       return;
     }
-    if (!this.video && this.waitT - this.offerT > 25) this.fail('НЕ УДАЛОСЬ СОЕДИНИТЬСЯ С ХОСТОМ');
+    const linked = this.pc.connectionState === 'connected' || this.pc.iceConnectionState === 'connected' || this.pc.iceConnectionState === 'completed';
+    if (!linked) {
+      if (this.video) this.video.style.display = 'none';
+      this.status = 'СОЕДИНЯЕМСЯ С ХОСТОМ...';
+      if (this.waitT - this.offerT > 25) this.failIce();
+      return;
+    }
     const v = this.video;
     if (v) {
       // на паузе видео прячем: вместо системной кнопки ▶ (её не нажать под экранными кнопками) — наша подсказка
@@ -340,6 +359,7 @@ const Net = {
     text('ОНЛАЙН', W / 2, 60, '#fcd820', 3, 'center', '#7c4000');
     text(tr('КОМНАТА') + ' ' + this.code, W / 2, 100, '#3cbcfc', 1, 'center');
     text(this.status, W / 2, 120, this.failed ? '#f83800' : (blink(2) ? '#fcfcfc' : '#7c7c7c'), 1, 'center');
+    if (this.diag) text(this.diag, W / 2, 132, '#7c7c7c', 1, 'center');
     if (this.failed) text('ОГОНЬ - В МЕНЮ', W / 2, 150, '#7c7c7c', 1, 'center');
     else text('ИГРАЕТЕ НА СВОЁМ УСТРОЙСТВЕ, КАРТИНКА - С ЭКРАНА ХОСТА', W / 2, 150, '#545454', 1, 'center');
   },
