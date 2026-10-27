@@ -23,6 +23,8 @@ const EN = {
   '4 БИОМА  •  8 БОССОВ  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ': '4 BIOMES  •  8 BOSSES  •  UP TO 3 PLAYERS: KEYBOARD AND PADS',
   'ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ': 'PRESS A KEY OR CLICK FOR SOUND',
   'ПРОБЕЛ / ENTER / КРЕСТ': 'SPACE / ENTER / CROSS',
+  'ДЛЯ ЗВУКА КОСНИТЕСЬ ЭКРАНА': 'TAP THE SCREEN FOR SOUND', 'ДЖОЙСТИК - ВЫБОР   ● - ОК': 'STICK - SELECT   ● - OK',
+  'ТЕЛЕФОН: ДЖОЙСТИК СЛЕВА  ● - ОГОНЬ  * - СПЕЦ  II - ПАУЗА': 'PHONE: STICK ON THE LEFT  ● - FIRE  * - SPECIAL  II - PAUSE',
   'WASD - ЕХАТЬ   ПРОБЕЛ - ОГОНЬ   E - СПЕЦПРИЁМ': 'WASD - MOVE   SPACE - FIRE   E - SPECIAL',
   'СТРЕЛКИ - ЕХАТЬ   ENTER - ОГОНЬ   K - СПЕЦПРИЁМ': 'ARROWS - MOVE   ENTER - FIRE   K - SPECIAL',
   'NUMPAD 8456 - ЕХАТЬ   0 - ОГОНЬ   ENTER - СПЕЦ': 'NUMPAD 8456 - MOVE   0 - FIRE   ENTER - SPECIAL',
@@ -70,7 +72,7 @@ const EN = {
   'ПОБЕДА!': 'VICTORY!', 'ЦИТАДЕЛЬ ОМЕГА УНИЧТОЖЕНА': 'OMEGA CITADEL DESTROYED', 'ЦИКЛ': 'LOOP',
   'ОГОНЬ - НОВЫЙ ЦИКЛ (ВРАГИ СИЛЬНЕЕ)': 'FIRE - NEW LOOP (STRONGER ENEMIES)', 'ESC - В МЕНЮ': 'ESC - MENU',
   // устройства
-  'СТРЕЛКИ': 'ARROWS', 'ГЕЙМПАД': 'GAMEPAD', 'ЛЮБОЕ': 'ANY',
+  'СТРЕЛКИ': 'ARROWS', 'ГЕЙМПАД': 'GAMEPAD', 'ЛЮБОЕ': 'ANY', 'СЕНСОР': 'TOUCH',
   // биомы
   'ПОЛЯ': 'FIELDS', 'ТУНДРА': 'TUNDRA', 'ПУСТОШЬ': 'WASTELAND', 'ЗАВОД': 'FACTORY',
   // боссы

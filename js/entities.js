@@ -550,6 +550,7 @@ class Player extends Tank {
     // трясём геймпад этого игрока; в одиночной игре управлять можно с любого — трясём все
     if (this.ctrl.pad != null) Input.rumble(this.ctrl.pad, strong, weak, ms);
     else if (this.ctrl === ALL_CTRL) for (let i = 0; i < MAX_PADS; i++) Input.rumble(i, strong, weak, ms);
+    if (this.ctrl.touch || (this.ctrl === ALL_CTRL && Touch.on)) Touch.vibrate(ms * strong);
   }
   die() {
     this.dead = true; this.hp = 0; this.revive = 0; this.barrier = 0; this.helmet = 0;

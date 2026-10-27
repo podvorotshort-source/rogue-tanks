@@ -606,7 +606,7 @@ function drawHUD() {
   }
   if (G.players.length === 1) {
     if (G.mod) text(G.mod.name, W - 3, 1, '#f87800', 1, 'right');
-    text('ESC ПАУЗА  M МУЗЫКА', W - 3, 8, '#444444', 1, 'right');
+    if (!Touch.on) text('ESC ПАУЗА  M МУЗЫКА', W - 3, 8, '#444444', 1, 'right');
   }
 }
 function drawPlayerHUD(p, x, compact) {
@@ -758,7 +758,7 @@ function drawTitle() {
     W / 2, 166, pads.length ? '#7c7c7c' : '#3c3c3c', 1, 'center');
   if (G.best.depth > 0) text(tr('РЕКОРД: СЕКТОР') + ' ' + sectorName(G.best.depth) + '   ' + tr('ОЧКИ:') + ' ' + G.best.score, W / 2, 180, '#7c7c7c', 1, 'center');
   text('4 БИОМА  •  8 БОССОВ  •  ДО 3 ИГРОКОВ: КЛАВИАТУРА И ГЕЙМПАДЫ', W / 2, 194, '#3c78a8', 1, 'center');
-  if (!Sound.ac || Sound.ac.state !== 'running') text('ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ', W / 2, 4, '#545454', 1, 'center');
+  if (!Sound.ac || Sound.ac.state !== 'running') text(Touch.on ? 'ДЛЯ ЗВУКА КОСНИТЕСЬ ЭКРАНА' : 'ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ', W / 2, 4, '#545454', 1, 'center');
   // парад танков внизу
   const T = getTiles(0);
   for (let x = 0; x < W; x += 8) { ctx.drawImage(T.brick, x, 240); ctx.drawImage(T.brick, x, 248); }
@@ -767,7 +767,7 @@ function drawTitle() {
     const x = ((G.time * 28 + i * 40) % (W + 240)) - 40;
     ctx.drawImage(TankGfx.get(sh, pal)[Math.floor(G.time * 10) % 2][1], Math.round(x), 222);
   });
-  if (blink(1.5)) text('ПРОБЕЛ / ENTER / КРЕСТ', W / 2, 207, '#545454', 1, 'center');
+  if (blink(1.5)) text(Touch.on ? 'ДЖОЙСТИК - ВЫБОР   ● - ОК' : 'ПРОБЕЛ / ENTER / КРЕСТ', W / 2, 207, '#545454', 1, 'center');
 }
 
 function drawHelp() {
@@ -780,6 +780,7 @@ function drawHelp() {
     ['#fcd820', 'ДО 3 ИГРОКОВ: ВХОД - ОГОНЬ НА СВОЁМ УСТРОЙСТВЕ'],
     ['#7c7c7c', 'ESC/P - ПАУЗА   M - МУЗЫКА'],
   ];
+  if (Touch.on) L.splice(2, 1, ['#fcfcfc', 'ТЕЛЕФОН: ДЖОЙСТИК СЛЕВА  ● - ОГОНЬ  * - СПЕЦ  II - ПАУЗА']);
   L.forEach(([c, s], i) => text(s, W / 2, 26 + i * 9, c, 1, 'center'));
   text('ПРАВИЛА', W / 2, 84, '#fcd820', 1, 'center');
   const R = [

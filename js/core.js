@@ -137,6 +137,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => Input.release(e.code));
 addEventListener('blur', () => { for (const k in Input.down) Input.down[k] = false; });
 addEventListener('mousedown', () => Sound.unlock());
+addEventListener('touchend', () => Sound.unlock()); // iOS разрешает звук только по окончании касания
 
 // Устройства управления: три раскладки на клавиатуре и до 4 геймпадов.
 // На экране выбора танка каждое устройство «входит» в игру нажатием огня и занимает свободный слот 1P/2P/3P.
@@ -144,6 +145,8 @@ const DEVICES = [
   { name: 'WASD', up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], fire: ['Space'], special: ['KeyE', 'KeyF'] },
   { name: 'СТРЕЛКИ', up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], fire: ['Enter', 'KeyL'], special: ['KeyK', 'ControlRight'] },
   { name: 'NUMPAD', up: ['Numpad8'], down: ['Numpad5', 'Numpad2'], left: ['Numpad4'], right: ['Numpad6'], fire: ['Numpad0'], special: ['NumpadEnter', 'NumpadDecimal'] },
+  // экранные джойстик и кнопки на телефоне (js/touch.js)
+  { touch: true, name: 'СЕНСОР', up: ['TouchUp'], down: ['TouchDown'], left: ['TouchLeft'], right: ['TouchRight'], fire: ['TouchA'], special: ['TouchB'] },
 ];
 const MAX_PADS = 4;
 for (let i = 0; i < MAX_PADS; i++) {
@@ -155,8 +158,8 @@ const devName = d => (d.pad != null && Input.pads[d.pad]) ? padName(Input.pads[d
 const ALL_CTRL = { name: 'ЛЮБОЕ' };
 for (const k of ['up', 'down', 'left', 'right', 'fire', 'special']) ALL_CTRL[k] = DEVICES.flatMap(d => d[k]);
 const PAD_STARTS = DEVICES.filter(d => d.pad != null).map(d => 'Pad' + d.pad + 'Start');
-const KEYS_BACK = ['Escape', 'Backspace', ...PAD_STARTS];
-const KEYS_PAUSE = ['Escape', 'KeyP', ...PAD_STARTS];
+const KEYS_BACK = ['Escape', 'Backspace', 'TouchStart', ...PAD_STARTS];
+const KEYS_PAUSE = ['Escape', 'KeyP', 'TouchStart', ...PAD_STARTS];
 
 function ctrlDir(c) {
   let best = -1, bs = -1;
