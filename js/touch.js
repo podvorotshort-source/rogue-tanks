@@ -13,7 +13,7 @@ const Touch = {
     if (this.root) this.root.style.display = 'block';
   },
   vibrate(ms) {
-    if (!this.on || !navigator.vibrate) return;
+    if (!this.on || !navigator.vibrate || (navigator.userActivation && !navigator.userActivation.hasBeenActive)) return;
     try { navigator.vibrate(Math.max(10, Math.round(ms))); } catch (e) { /* не поддерживается */ }
   },
   // размер джойстика от меньшей стороны экрана
@@ -58,7 +58,7 @@ const Touch = {
   init() {
     const css = document.createElement('style');
     css.textContent = `
-      html, body { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+      html, body, canvas, #touch, #touch * { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
       #touch { position: fixed; inset: 0; display: none; pointer-events: none; z-index: 10; font-family: monospace; }
       #touch .zone { position: absolute; left: 0; top: 0; width: 50%; height: 100%; pointer-events: auto; }
       #touch .stick { position: absolute; border-radius: 50%; border: 2px solid rgba(252,252,252,.25); background: rgba(252,252,252,.06); pointer-events: none; }
@@ -125,6 +125,20 @@ const Touch = {
     zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
 
     root.addEventListener('contextmenu', e => e.preventDefault());
+    // браузер не должен зумить и прокручивать: iOS игнорирует user-scalable=no,
+    // поэтому гасим сами касания (pointer-события джойстика и кнопок приходят раньше и не страдают)
+    const block = e => { if (e.cancelable) e.preventDefault(); };
+    for (const t of ['touchstart', 'touchmove', 'touchend', 'dblclick', 'gesturestart', 'gesturechange', 'gestureend'])
+      document.addEventListener(t, block, { passive: false });
+    // если зум всё же случился — возвращаем масштаб 1
+    const meta = document.querySelector('meta[name=viewport]');
+    const unzoom = () => {
+      if (!meta || !window.visualViewport || visualViewport.scale <= 1.01) return;
+      const c = meta.content;
+      meta.content = c + ', minimum-scale=1';
+      setTimeout(() => { meta.content = c; }, 50);
+    };
+    if (window.visualViewport) visualViewport.addEventListener('resize', unzoom);
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.releaseAll(); });
     addEventListener('blur', () => this.releaseAll());
     // включаемся на сенсорных экранах сразу, на остальных — при первом касании
