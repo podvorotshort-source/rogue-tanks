@@ -495,14 +495,13 @@ class Player extends Tank {
     const charged = !!this.perks.wait && G.time - this.lastShot >= 1.5;
     this.lastShot = G.time;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
-    // дробь кучная, а боковые дробины летят недалеко — из угла рикошетами всю карту не простреливают
-    const angs = s.spread ? (s.pellets >= 5 ? [0, -0.07, 0.07, -0.14, 0.14] : [0, -0.08, 0.08]) : [0];
+    const angs = s.spread ? (s.pellets >= 5 ? [0, -0.07, 0.07, -0.14, 0.14] : [0, -0.08, 0.08]) : [0]; // дробь кучная
     const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7;
     for (const a of angs) {
       const ch = charged && a === 0;
       G.bullets.push(new Bullet(bx, by, Math.cos(base + a) * s.bspeed, Math.sin(base + a) * s.bspeed, 'player', this, {
         dmg: s.dmg * (ch ? 3 : 1), power: s.power, pierce: s.pierce + (ch ? 1 : 0), bounce: s.bounce, explosive: s.explosive,
-        size: s.dmg > 1 || ch ? 5 : 4, counts: a === 0, fx: s.fx, col: elemCol(s.fx), charged: ch, life: a === 0 ? 6 : 0.9,
+        size: s.dmg > 1 || ch ? 5 : 4, counts: a === 0, fx: s.fx, col: elemCol(s.fx), charged: ch,
       }));
     }
     G.effects.push(new Boom(bx + DX[this.dir] * 2, by + DY[this.dir] * 2, charged ? 6 : 3, { dur: charged ? 0.15 : 0.08, quiet: true }));
