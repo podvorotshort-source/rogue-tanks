@@ -78,14 +78,34 @@ function explode(x, y, r, o = {}) {
 // ---------- миномётные снаряды / бомбы (с прицельной меткой) ----------
 class Mortar {
   constructor(sx, sy, tx, ty, T, o = {}) {
-    Object.assign(this, { sx, sy, tx, ty, T, t: 0, alive: true, r: o.r || 16, h: o.h != null ? o.h : 50, dmg: o.dmg || 1, pal: o.pal, col: o.col });
+    Object.assign(this, { sx, sy, tx, ty, T, t: 0, alive: true, r: o.r || 16, h: o.h != null ? o.h : 50, dmg: o.dmg || 1, pal: o.pal, col: o.col, by: o.by || null, sub: !!o.sub });
   }
   update(dt) {
     this.t += dt;
-    if (this.t >= this.T) { this.alive = false; explode(this.tx, this.ty, this.r, { hurtPlayers: true, dmg: this.dmg, pal: this.pal }); }
+    if (this.t < this.T) return;
+    this.alive = false;
+    if (this.by) { // миномёт игрока
+      explode(this.tx, this.ty, this.r, { hurtEnemies: true, hurtBoss: true, dmg: this.dmg, by: this.by, silent: this.sub });
+      if (this.by.perks.cluster && !this.sub) for (let i = 0; i < 4; i++) { // «Кассетные мины»
+        const a = i / 4 * Math.PI * 2 + rand(-0.3, 0.3), d = rand(16, 22);
+        G.mortars.push(new Mortar(this.tx, this.ty, clamp(this.tx + Math.cos(a) * d, 4, FW - 4), clamp(this.ty + Math.sin(a) * d, 4, FH - 4), 0.3 + i * 0.05,
+          { r: 10, h: 12, dmg: 1, by: this.by, col: '#3c3c3c', sub: true }));
+      }
+    }
+    else explode(this.tx, this.ty, this.r, { hurtPlayers: true, dmg: this.dmg, pal: this.pal });
   }
   drawMarker(g) {
     const p = this.t / this.T;
+    if (this.by) { // метка своего миномёта
+      if (this.sub) return; // бомбы кассеты падают без метки: уголки цветом игрока, без тревожного мигания
+      const c = this.by.color, r = Math.round(this.r * (1 - p * 0.35)), x = Math.round(this.tx), y = Math.round(this.ty);
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        const cx = x + sx * r, cy = y + sy * r;
+        rect(g, sx < 0 ? cx : cx - 2, cy, 3, 1, c); rect(g, cx, sy < 0 ? cy : cy - 2, 1, 3, c);
+      }
+      rect(g, x, y, 1, 1, c);
+      return;
+    }
     const col = Math.floor(this.t * (5 + p * 16)) % 2 ? '#f83800' : '#fcd820';
     circle(g, this.tx, this.ty, this.r * (1 - p * 0.35), col, 3);
     rect(g, Math.round(this.tx) - 3, Math.round(this.ty), 7, 1, col); rect(g, Math.round(this.tx), Math.round(this.ty) - 3, 1, 7, col);

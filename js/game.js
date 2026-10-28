@@ -34,6 +34,8 @@ const PERKS = {
   coil: { name: 'ТЕСЛА-КАТУШКА', desc: 'МОЛНИЕЙ БЬЁТ И ОГЛУШАЕТ ВРАГОВ РЯДОМ', icon: '(⚡)', aux: true, max: 3 },
   drone: { name: 'ДРОН', desc: 'КРУЖИТ РЯДОМ И СТРЕЛЯЕТ ПО ВРАГАМ', icon: '◆', aux: true, max: 3 },
   ram: { name: 'ОТВАЛ-ТАРАН', desc: 'УРОН ПРИ НАЕЗДЕ, ОТБРАСЫВАЕТ ВРАГОВ', icon: '▌', aux: true, max: 3 },
+  mort: { name: 'МИНОМЁТ', desc: 'НАВЕСОМ ЧЕРЕЗ СТЕНЫ БЬЁТ ПО ДАЛЬНИМ ВРАГАМ', icon: '⌒', aux: true, max: 3 },
+  saw: { name: 'ДИСКИ-ПИЛЫ', desc: 'ПИЛЫ КРУЖАТ ВОКРУГ ТАНКА, РЕЖУТ ВРАГОВ И СБИВАЮТ ПУЛИ', icon: '✲', aux: true, max: 3 },
 
   // синергии: легендарные, появляются только когда собраны обе части
   napalm: { name: 'НАПАЛМ', desc: 'ВАШИ ВЗРЫВЫ ОСТАВЛЯЮТ ГОРЯЩУЮ ЗЕМЛЮ', icon: '♨*', legend: true, parts: ['inc', 'explosive'] },
@@ -47,6 +49,10 @@ const PERKS = {
   mtrail: { name: 'МИННЫЙ СЛЕД', desc: 'РЫВОК ОСТАВЛЯЕТ ЦЕПОЧКУ МИН', icon: '→●', legend: true, parts: ['mines'], cls: 'scout' },
   reflectx: { name: 'ВЗРЫВНОЕ ОТРАЖЕНИЕ', desc: 'ОТРАЖЁННЫЕ ЩИТОМ СНАРЯДЫ ВЗРЫВАЮТСЯ', icon: '()*', legend: true, parts: ['explosive'], cls: 'heavy' },
   steelstorm: { name: 'СТАЛЬНОЙ ШТОРМ', desc: 'ЗАЛП ЛОМАЕТ СТАЛЬ И ПРОШИВАЕТ ВРАГОВ', icon: '*#', legend: true, parts: ['pierce'], cls: 'assault' },
+  artstrike: { name: 'АРТНАЛЁТ', desc: 'МИНОМЁТ БЬЁТ ПО ПОМЕЧЕННЫМ ДВОЙНЫМ ЗАЛПОМ', icon: '⌒⌖', legend: true, parts: ['mort', 'mark'] },
+  cluster: { name: 'КАССЕТНЫЕ МИНЫ', desc: 'МИНА МИНОМЁТА РАССЫПАЕТСЯ НА 4 БОМБЫ', icon: '⌒*', legend: true, parts: ['mort', 'explosive'] },
+  grinder: { name: 'МЯСОРУБКА', desc: 'ПИЛЫ КРУТЯТСЯ БЫСТРЕЕ И БЬЮТ ×2', icon: '✲▌', legend: true, parts: ['saw', 'ram'] },
+  hotsaw: { name: 'РАСКАЛЁННЫЕ ПИЛЫ', desc: 'ПИЛЫ ПОДЖИГАЮТ ВРАГОВ', icon: '✲♨', legend: true, parts: ['saw', 'inc'] },
   disch: { name: 'РАЗРЯДНИК', desc: 'БЛОК ЭНЕРГОЩИТОМ ВЫЗЫВАЕТ ЭМИ-ВОЛНУ', icon: '()⚡', legend: true, parts: ['eshield', 'tesla'] },
 
   // карты с особым эффектом
@@ -73,7 +79,7 @@ const MODS = [
 const G = {
   state: 'title', time: 0, players: [], enemies: [], bullets: [], mortars: [], pickups: [], effects: [], particles: [],
   popups: [], spawners: [], tanks: [], queue: [], boss: null, level: null, depth: 1, freeze: 0, shake: 0, flashT: 0,
-  mines: [], fires: new Map(), timers: [],
+  mines: [], fires: new Map(), timers: [], bossAlt: [0, 0, 0, 0],
   bannerT: 0, bannerText: '', bannerCol: '#fff', menuSel: 0, paused: false, pauseSel: 0, scoreMul: 1, dropChance: 0.06,
   enemyMods: { hp: 0, speed: 1, fire: 1, hunt: 0.2, loop: 0, depth: 1 }, killedCount: 0, best: Store.get('tanks_rogue_best', { depth: 0, score: 0 }),
 
@@ -198,6 +204,7 @@ function updateFlow() {
 function newRun(classes, ctrls, colors) {
   G.players = classes.map((c, i) => new Player(i, c, classes.length > 1 && ctrls ? ctrls[i] : ALL_CTRL, colors ? colors[i] : i));
   G.depth = 1; G.runTime = 0; G.newRecord = false;
+  G.bossAlt = BOSS_SETS.map(() => randi(0, 1)); // какой из двух боссов биома встретится в этом забеге
   startSector();
 }
 
@@ -207,7 +214,7 @@ function startSector() {
   const d = (G.depth - 1) % 16 + 1, L = info.loop, extra = G.players.length - 1; // доп. игроки: +враги, +прочность боссов
   G.mod = (!info.boss && G.depth >= 2 && Math.random() < 0.45) ? pick(MODS) : null;
   const mod = G.mod ? G.mod.id : '';
-  const bossId = info.boss ? BOSS_SETS[info.biome][L % 2] : null; // цикл 1 — классические боссы, цикл 2 — новые, дальше по очереди
+  const bossId = info.boss ? BOSS_SETS[info.biome][(G.bossAlt[info.biome] + L) % 2] : null; // случайный из двух, в следующем цикле — другой
   G.level = info.boss ? generateBossArena(info.biome, bossId) : generateLevel(info.biome, { sideSpawns: d >= 5, iceMul: mod === 'ice' ? 4 : 1 });
   G.enemies = []; G.bullets = []; G.mortars = []; G.pickups = []; G.effects = []; G.particles = []; G.popups = []; G.spawners = [];
   G.mines = []; G.fires = new Map(); G.timers = [];

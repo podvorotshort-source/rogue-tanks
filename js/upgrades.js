@@ -5,7 +5,7 @@
 // ============================================================
 
 const ICE_COLS = ['#ffffff', '#e8fcff', '#a4e4fc', '#3cbcfc', '#0078f8', '#003c8c', '#001c40'];
-const AUX_IDS = ['mg', 'mines', 'rk', 'coil', 'drone', 'ram'];
+const AUX_IDS = ['mg', 'mines', 'rk', 'coil', 'drone', 'ram', 'mort', 'saw'];
 const auxCount = p => AUX_IDS.filter(id => p.perks[id]).length;
 // цвет снаряда по стихии (если стихий несколько — по старшей)
 function elemCol(fx) {
@@ -238,7 +238,9 @@ function detonateNear(x, y, r, p) {
 }
 
 // ---------- доп. системы (стреляют сами) ----------
-const newAuxState = () => ({ mgA: -Math.PI / 2, mgCd: 0.5, mgBurst: 0, mgBt: 0, mineCd: 0.5, mlx: null, mly: null, rkCd: 1.5, coilCd: 0.5, dA: 0, dCd: 0.4, ramBoss: 0, dashDist: 0 });
+const newAuxState = () => ({ mgA: -Math.PI / 2, mgCd: 0.5, mgBurst: 0, mgBt: 0, mineCd: 0.5, mlx: null, mly: null, rkCd: 1.5, coilCd: 0.5, dA: 0, dCd: 0.4, ramBoss: 0, dashDist: 0,
+  mortCd: 1.5, sawA: 0, sawHit: new WeakMap(), sawBoss: 0 });
+const sawPos = (p, i) => { const a = p.aux.sawA + i / p.perks.saw * Math.PI * 2; return [p.cx + Math.cos(a) * 20, p.cy + Math.sin(a) * 20]; };
 const dronePos = (p, i) => { const a = p.aux.dA + i * Math.PI; return [p.cx + Math.cos(a) * 22, p.cy + Math.sin(a) * 15]; };
 function frontStrip(p, depth) {
   const d = p.dir, x = p.x, y = p.y;
@@ -342,6 +344,59 @@ function updateAux(p, dt) {
       if (part) { A.ramBoss = 0.5; bossHit(part, dmg, p); ramSparks(fr); G.shake = Math.max(G.shake, 2); }
     }
   }
+  // миномёт: навесом через стены по ближайшим врагам не ближе 40 px, каждой мине — своя цель
+  if (lv('mort')) {
+    const L = lv('mort');
+    A.mortCd -= dt;
+    if (A.mortCd <= 0) {
+      const list = [];
+      const art = !!p.perks.artstrike, mk = m => art && m > 0 ? 1000 : 0; // «Артналёт»: помеченные — первыми
+      for (const e of G.enemies) if (e.alive) { const d = dist(p.cx, p.cy, e.cx, e.cy); if (d > 40 && d < 280) list.push({ x: e.cx, y: e.cy, d: d - mk(e.mark), m: mk(e.mark) }); }
+      if (bossLive()) { const a = bossAim(), d = dist(p.cx, p.cy, a.x, a.y); if (d > 40 && d < 280) list.push({ x: a.x, y: a.y, d: d - 60 - mk(G.boss.mark), m: mk(G.boss.mark) }); }
+      if (!list.length) A.mortCd = 0.4;
+      else {
+        A.mortCd = [0, 3.2, 2.8, 2.4][L];
+        list.sort((a, b) => a.d - b.d);
+        const marked = list.filter(q => q.m).length, n = marked ? L * 2 : L, k = marked || list.length; // двойной залп — только по помеченным
+        for (let i = 0; i < n; i++) {
+          const q = list[i % k], spr = i >= k ? 12 : 0; // целей меньше, чем мин — кладём рядом
+          G.mortars.push(new Mortar(p.cx, p.cy, clamp(q.x + rand(-spr, spr), 4, FW - 4), clamp(q.y + rand(-spr, spr), 4, FH - 4), 0.85 + i * 0.12,
+            { r: L >= 3 ? 18 : 15, h: 46, dmg: 2, by: p, col: '#3c3c3c' }));
+        }
+        Sound.play('mortar');
+      }
+    }
+  }
+  // диски-пилы: режут врагов и босса, сбивают вражеские снаряды
+  if (lv('saw')) {
+    const sdmg = p.perks.grinder ? 2 : 1, hot = !!p.perks.hotsaw; // «Мясорубка», «Раскалённые пилы»
+    A.sawA += (p.perks.grinder ? 6.3 : 4.2) * dt; A.sawBoss -= dt;
+    for (let i = 0; i < lv('saw'); i++) {
+      const [sx, sy] = sawPos(p, i);
+      for (const e of G.enemies) {
+        if (!e.alive || !overlap(sx - 4, sy - 4, 8, 8, e.x, e.y, 16, 16) || G.time - (A.sawHit.get(e) || -9) < 0.35) continue;
+        A.sawHit.set(e, G.time);
+        e.takeHit(sdmg, p);
+        if (hot && e.alive) e.ignite(3, p);
+        sawSparks(sx, sy);
+      }
+      for (const b of G.bullets) if (b.alive && b.team === 'enemy' && (b.cancel || b.hp) && dist(b.x, b.y, sx, sy) < 6) {
+        G.effects.push(new Boom(b.x, b.y, 3, { quiet: true })); b.kill(); sawSparks(sx, sy);
+      }
+      if (A.sawBoss <= 0 && bossLive()) {
+        const part = G.boss.hitTest(sx, sy, 4);
+        if (part) {
+          A.sawBoss = 0.35; bossHit(part, sdmg, p); sawSparks(sx, sy);
+          if (hot) { G.boss.burn = 3; G.boss.burnPart = part; G.boss.burnBy = p; }
+        }
+      }
+    }
+  }
+}
+function sawSparks(x, y) {
+  for (let i = 0; i < 4 && G.particles.length < 450; i++)
+    G.particles.push(new Particle(x, y, rand(-60, 60), rand(-60, 60), 0.25, pick(['#fcfcfc', '#fcd820', '#fca044']), 1));
+  Sound.play('hit');
 }
 function ramSparks(fr) {
   for (let i = 0; i < 6 && G.particles.length < 450; i++)
@@ -357,6 +412,7 @@ function drawAux(p, g) {
     else if (d === 1) { rect(g, x + 16, y - 1, 3, 18, '#545454'); rect(g, x + 17, y, 1, 16, '#d0d0d0'); }
     else { rect(g, x - 3, y - 1, 3, 18, '#545454'); rect(g, x - 2, y, 1, 16, '#d0d0d0'); }
   }
+  if (lv('mort')) { rect(g, x + 10, y + 10, 5, 5, '#2c2c2c'); rect(g, x + 10, y + 10, 5, 1, '#7c7c7c'); rect(g, x + 12, y + 12, 1, 1, '#000'); }
   if (lv('rk')) { rect(g, x + 1, y + 1, 5, 4, '#3c3c3c'); rect(g, x + 2, y + 1, 1, 2, '#f83800'); rect(g, x + 4, y + 1, 1, 2, '#f83800'); }
   if (lv('coil')) { rect(g, x + 11, y + 2, 2, 5, '#7c7c9c'); disc(g, x + 12, y + 2, 1, (t * 8 | 0) % 2 ? '#3cbcfc' : '#e8fcff'); }
   if (lv('mg')) {
@@ -370,7 +426,18 @@ function drawAux(p, g) {
     disc(g, mx, my, 2 + ((t * 12 | 0) % 2), '#fcd820'); rect(g, Math.round(mx), Math.round(my), 1, 1, '#fcfcfc');
   }
 }
+function drawSaws(p, g) {
+  const n = p.perks.saw || 0;
+  if (!n || p.dead) return;
+  for (let i = 0; i < n; i++) {
+    const [sx, sy] = sawPos(p, i), r = p.aux.sawA * 3, hot = !!p.perks.hotsaw;
+    disc(g, sx, sy, 4, hot ? '#f83800' : '#7c7c7c'); disc(g, sx, sy, 3, hot ? '#fca044' : '#bcbcbc');
+    for (let k = 0; k < 4; k++) { const a = r + k * Math.PI / 2; rect(g, Math.round(sx + Math.cos(a) * 4), Math.round(sy + Math.sin(a) * 4), 1, 1, '#fcfcfc'); }
+    rect(g, Math.round(sx), Math.round(sy), 1, 1, '#3c3c3c');
+  }
+}
 function drawDrones(p, g) {
+  drawSaws(p, g);
   const L = p.perks.drone || 0;
   if (!L || p.dead) return;
   const f = (G.time * 30 | 0) % 2;
