@@ -28,11 +28,20 @@ const NET_ICE = { iceServers: [
   ...NET_TURN,
 ] };
 // какие пути соединения нашлись: host — локальная сеть, srflx — через интернет напрямую, relay — через ретранслятор
-async function iceReport(pc) {
-  const loc = new Set(), rem = new Set();
-  try { (await pc.getStats()).forEach(r => { if (r.type === 'local-candidate') loc.add(r.candidateType); if (r.type === 'remote-candidate') rem.add(r.candidateType); }); } catch (e) { /* нет статистики */ }
-  return 'ICE ' + pc.iceConnectionState + ' | МОИ: ' + ([...loc].join(',') || '-') + ' | ХОСТА: ' + ([...rem].join(',') || '-');
+const candType = c => { const m = / typ (\w+)/.exec(c || ''); return m ? m[1] : null; };
+const sdpTypes = sdp => (sdp.match(/a=candidate:[^\r\n]*/g) || []).map(candType).filter(Boolean);
+// адреса соединения шлём по одному, как только нашлись (Safari собирает их долго);
+// пришедшие раньше описания соединения копим и добавляем потом
+function iceTrickle(pc, send, seen) {
+  pc.onicecandidate = e => { if (e.candidate && e.candidate.candidate) { seen.loc.add(candType(e.candidate.candidate)); send(e.candidate.toJSON()); } };
 }
+function iceAdd(pc, c, queue, seen) {
+  seen.rem.add(candType(c.candidate));
+  if (!pc || !pc.remoteDescription) { queue.push(c); return; }
+  pc.addIceCandidate(c).catch(() => {});
+}
+function iceFlush(pc, queue) { for (const c of queue.splice(0)) pc.addIceCandidate(c).catch(() => {}); }
+const iceList = set => [...set].filter(Boolean).join(',') || '-';
 const NET_KEYS = ['Up', 'Down', 'Left', 'Right', 'A', 'B', 'Start'];
 const NET_START = ['Escape', 'KeyP', 'TouchStart', ...PAD_STARTS];
 const netId = () => Math.random().toString(36).slice(2, 10);
@@ -110,11 +119,11 @@ class SignalBus {
   pub(topic, d) { d.i = netId(); const s = JSON.stringify(d); for (const l of this.links) l.pub(topic, s); }
   close() { for (const l of this.links) l.close(); }
 }
-// ждём, пока соберутся адреса соединения (без поэтапного обмена — так проще через почтовый ящик)
-function iceDone(pc) {
+// ждём немного, пока соберутся адреса соединения
+function iceDone(pc, ms) {
   return new Promise(ok => {
     if (pc.iceGatheringState === 'complete') return ok();
-    const t = setTimeout(ok, 3000);
+    const t = setTimeout(ok, ms);
     pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); ok(); } });
   });
 }
@@ -163,12 +172,20 @@ const Net = {
       this.offer(slot, d.g);
     } else if (d.t === 'answer' && d.g) {
       const g = this.guests.find(x => x && x.gid === d.g);
-      if (g && !g.answered) { g.answered = true; g.pc.setRemoteDescription(d.sdp).then(() => this.tuneSenders(g.pc)).catch(() => this.dropGuest(g)); }
+      if (g && !g.answered) {
+        g.answered = true;
+        for (const t of sdpTypes(d.sdp.sdp)) g.seen.rem.add(t);
+        g.pc.setRemoteDescription(d.sdp).then(() => { iceFlush(g.pc, g.queue); this.tuneSenders(g.pc); }).catch(() => this.dropGuest(g));
+      }
+    } else if (d.t === 'cand' && d.g) {
+      const g = this.guests.find(x => x && x.gid === d.g);
+      if (g) iceAdd(g.pc, d.c, g.queue, g.seen);
     }
   },
   async offer(slot, gid) {
     const pc = new RTCPeerConnection(NET_ICE);
-    const g = this.guests[slot] = { gid, pc, dc: null, slot, live: false, answered: false };
+    const g = this.guests[slot] = { gid, pc, dc: null, slot, live: false, answered: false, queue: [], seen: { loc: new Set(), rem: new Set() } };
+    iceTrickle(pc, c => this.bus.pub(this.topic('g/' + gid), { t: 'cand', c }), g.seen);
     const st = this.getStream();
     for (const t of st.getTracks()) pc.addTrack(t, st);
     const dc = g.dc = pc.createDataChannel('in');
@@ -179,8 +196,8 @@ const Net = {
     setTimeout(() => { if (!g.live) this.dropGuest(g); }, 30000); // гость так и не подключился — освобождаем место
     try {
       await pc.setLocalDescription(await pc.createOffer());
-      await iceDone(pc);
-      this.bus.pub(this.topic('g/' + gid), { t: 'offer', sdp: pc.localDescription.toJSON ? pc.localDescription.toJSON() : { type: 'offer', sdp: pc.localDescription.sdp } });
+      await iceDone(pc, 1000); // что собралось за секунду — сразу в описании, остальное догонит по одному
+      this.bus.pub(this.topic('g/' + gid), { t: 'offer', sdp: { type: 'offer', sdp: pc.localDescription.sdp } });
     } catch (e) { this.dropGuest(g); }
   },
   applyBits(slot, b) {
@@ -256,16 +273,19 @@ const Net = {
     this.status = 'ПОДКЛЮЧЕНИЕ...'; this.failed = false; this.waitT = 0; this.joinT = 0; this.bits = -1; this.offerT = 0;
     G.state = 'net'; Music.stop();
     if (this.code.length !== 4) { this.fail('КОД - 4 ЛАТИНСКИЕ БУКВЫ'); return; }
-    this.gid = netId();
+    this.gid = netId(); this.iceQueue = []; this.seen = { loc: new Set(), rem: new Set() };
     this.bus = new SignalBus((t, d) => this.onGuestMsg(d));
     this.bus.sub(this.topic('g/' + this.gid));
   },
   async onGuestMsg(d) {
     if (this.failed) return;
     if (d.t === 'full') return this.fail('КОМНАТА ЗАПОЛНЕНА');
+    if (d.t === 'cand') return iceAdd(this.pc, d.c, this.iceQueue, this.seen);
     if (d.t !== 'offer' || this.pc) return;
     this.status = 'СОЕДИНЯЕМСЯ С ХОСТОМ...'; this.offerT = this.waitT;
     const pc = this.pc = new RTCPeerConnection(NET_ICE);
+    for (const t of sdpTypes(d.sdp.sdp)) this.seen.rem.add(t);
+    iceTrickle(pc, c => this.bus.pub(this.topic('host'), { t: 'cand', g: this.gid, c }), this.seen);
     pc.ontrack = e => this.showVideo(e.streams[0] || new MediaStream([e.track]));
     pc.ondatachannel = e => {
       const dc = this.dc = e.channel;
@@ -275,15 +295,17 @@ const Net = {
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') this.failIce(); };
     try {
       await pc.setRemoteDescription(d.sdp);
+      iceFlush(pc, this.iceQueue);
       await pc.setLocalDescription(await pc.createAnswer());
-      await iceDone(pc);
+      await iceDone(pc, 1000);
       this.bus.pub(this.topic('host'), { t: 'answer', g: this.gid, sdp: { type: 'answer', sdp: pc.localDescription.sdp } });
     } catch (e) { this.fail(tr('ОШИБКА СЕТИ') + ' (' + (e.name || 'webrtc') + ')'); }
   },
   // не соединились напрямую: показываем, какие пути нашлись, — по ним видно, в чём дело
   async failIce() {
     if (this.failed || !this.pc) return;
-    this.diag = await iceReport(this.pc);
+    const pc = this.pc;
+    this.diag = 'ICE ' + pc.iceConnectionState + ' | МОИ: ' + iceList(this.seen.loc) + ' | ХОСТА: ' + iceList(this.seen.rem);
     this.fail('НЕ УДАЛОСЬ СОЕДИНИТЬСЯ С ХОСТОМ');
   },
   fail(msg) {
@@ -323,6 +345,7 @@ const Net = {
       if (anyCtrl('fire') || Input.hit(KEYS_BACK)) location.href = location.pathname; // назад в меню, без ?join
       return;
     }
+    if (!this.bus) return;
     if (!this.pc) {
       // стучимся в комнату, пока хост не ответит
       const n = this.bus.count;
