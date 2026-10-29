@@ -77,7 +77,7 @@ const Touch = {
     root.id = 'touch';
     root.innerHTML = '<div class="zone"></div><div class="stick"><div class="knob"></div></div>' +
       '<div class="btn fire" data-code="TouchA">●</div><div class="btn special" data-code="TouchB">★</div>' +
-      '<div class="btn small" data-code="TouchStart">II</div><div class="btn small" data-code="KeyM">♪</div>';
+      '<div class="btn small" data-code="TouchStart">P</div><div class="btn small" data-code="KeyM">♪</div>';
     document.body.appendChild(root);
     this.stick = root.querySelector('.stick'); this.knob = root.querySelector('.knob');
     const [fire, special, pause, music] = root.querySelectorAll('.btn');

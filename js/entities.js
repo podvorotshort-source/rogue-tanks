@@ -130,6 +130,7 @@ class Bullet {
     // улучшения: стихии (fx), цвет, заряженный выстрел, сверло, наведение ракет игрока
     this.fx = o.fx || null; this.col = o.col || null; this.charged = !!o.charged; this.shard = !!o.shard;
     this.drill = o.drill || 0; this.target = o.target || null; this.accel = o.accel || 0; this.maxsp = o.maxsp || 0;
+    this.ion = !!o.ion; this.ionD = 0; // «Ионная пушка»: молнии по пути
     if (this.counts && owner) owner.out++;
   }
   // рикошет игрока с «Шаровой молнией»
@@ -185,6 +186,11 @@ class Bullet {
       }
       if (this.hitEntities()) return;
       if (this.hitMap(ox, oy)) return;
+    }
+    if (this.ion && (this.ionD += Math.hypot(this.vx, this.vy) * dt) >= 18) {
+      this.ionD = 0;
+      const t = findTarget(this.x, this.y, 30);
+      if (t && !(this.hits && this.hits.has(t))) zap(this.x, this.y, t, 1, this.owner, 0.3);
     }
   }
   hitMap(ox, oy) {
@@ -272,9 +278,10 @@ class Bullet {
         }
       }
     } else {
+      // сначала щиты: «Широкий щит» прикрывает и стоящих рядом напарников
       for (const p of G.players) {
         if (p.dead) continue;
-        if (p.barrier > 0 && dist(this.x, this.y, p.cx, p.cy) < 17) {
+        if (p.barrier > 0 && dist(this.x, this.y, p.cx, p.cy) < p.shieldR) {
           this.release();
           this.team = 'player'; this.owner = p; this.cancel = true; this.homing = 0;
           let a = angleTo(p.cx, p.cy, this.x, this.y);
@@ -285,10 +292,13 @@ class Bullet {
             this.explosive = Math.max(this.explosive, 12); this.col = '#3cbcfc';
             G.effects.push(new RingFx(this.x, this.y, 2, 8, '#e8fcff', 0.2));
           }
-          this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp; this.dmg = Math.max(this.dmg, p.stats.dmg);
+          this.vx = Math.cos(a) * sp; this.vy = Math.sin(a) * sp; this.dmg = Math.max(this.dmg, p.stats.dmg) * (p.tal('shDmg') ? 2 : 1);
           Sound.play('steel');
           return false;
         }
+      }
+      for (const p of G.players) {
+        if (p.dead) continue;
         if (overlap(bx, by, s, s, p.x + 1, p.y + 1, 14, 14)) {
           p.hurt(this.dmg);
           if (this.explosive) explode(this.x, this.y, this.explosive, { hurtPlayers: true });
@@ -433,8 +443,13 @@ class Player extends Tank {
     this.dashT = 0; this.dashHits = null; this.revive = 0;
     this.eshieldReady = true; this.eshieldT = 0; this.vampN = 0;
     this.aux = newAuxState(); this.lastShot = -10;
+    // таланты: base — бесплатные стартовые карты, заряды спецприёма, «Второй шанс», «Аварийный ремонт», «Адреналин»
+    this.base = {}; this.baseWeapon = 0; this.charges = 1; this.secondUsed = false; this.emergUsed = false; this.adren = 0; this.dzT = 0;
     this.recalc();
   }
+  tal(id) { return talOf(this, id); }
+  get maxCh() { return this.tal('fort') || this.tal('dsTwo') ? 2 : 1; }
+  get shieldR() { return this.tal('shWide') ? 27 : 17; }
   get color() { return PLAYER_PALS[this.colorIdx].ui; }
   get look() { return Math.floor(this.weapon / 2); } // внешний вид растёт каждые 2 звезды
   get label() { return (this.idx + 1) + 'P'; }
@@ -443,10 +458,11 @@ class Player extends Tank {
     const s = { speed: C.speed, reload: C.reload, bspeed: C.bspeed, maxB: C.maxB, dmg: C.dmg, pierce: 0, bounce: 0, power: false,
       spread: false, explosive: 0, cdMul: 1, luck: 1, eshield: false, vamp: false, fieldRepair: 0, fx: null, pellets: 3 };
     for (const id in this.perks) for (let i = 0; i < this.perks[id]; i++) if (PERKS[id].apply) PERKS[id].apply(s);
-    // уровни оружия от звёзд (общие для команды, до MAX_WEAPON)
+    talentStats(this, s);
+    // уровни оружия от звёзд (общие для команды, до MAX_WEAPON); сталь звёзды не пробивают — для этого карта «Бронебойные»
     if (this.weapon >= 1) s.bspeed *= 1.3;
     if (this.weapon >= 2) s.maxB += 1;
-    if (this.weapon >= 3) s.power = true;
+    if (this.weapon >= 3) s.reload *= 0.9;
     if (this.weapon >= 4) s.reload *= 0.75;
     if (this.weapon >= 5) s.dmg += 1;
     if (this.weapon >= 6) s.maxB += 1;
@@ -458,18 +474,23 @@ class Player extends Tank {
   }
   placeAt(bx, by) {
     this.x = bx * BLK; this.y = by * BLK; this.dir = 0; this.out = 0; this.slide = 0;
-    this.dashT = 0; this.barrier = 0; this.helmet = Math.max(this.helmet, 2.5); this.revive = 0;
+    this.dashT = 0; this.barrier = 0; this.helmet = Math.max(this.helmet, this.tal('helmet') ? 6 : 2.5); this.revive = 0;
+    this.emergUsed = false; this.adren = 0;
     this.aux.mlx = null; this.aux.mly = null;
   }
   update(dt) {
     this.flash = Math.max(0, this.flash - dt);
     if (this.dead) return this.updateWreck(dt);
-    this.cool -= dt; this.inv -= dt; this.helmet -= dt; this.barrier -= dt; this.scd -= dt;
+    this.cool -= dt; this.inv -= dt; this.helmet -= dt; this.barrier -= dt; this.scd -= dt; this.adren -= dt;
+    // заряды спецприёма: перезарядка идёт, пока зарядов меньше максимума
+    if (this.scd <= 0 && this.charges < this.maxCh) { this.charges++; if (this.charges < this.maxCh) this.scd = CLASSES[this.cls].cd * this.stats.cdMul; }
     if (this.stats.eshield && !this.eshieldReady) { this.eshieldT -= dt; if (this.eshieldT <= 0) { this.eshieldReady = true; G.effects.push(new RingFx(this.cx, this.cy, 4, 12, '#3cbcfc', 0.3)); } }
     const onIce = G.level.onIce(this.x, this.y, 16, 16);
     updateAux(this, dt);
     if (this.dashT > 0) {
       this.dashT -= dt;
+      if (this.tal('dsBreak')) { const fr = frontStrip(this, 4), r = G.level.destroyRect(fr[0], fr[1], fr[2], fr[3], true); if (r.brick || r.steel) Sound.play('brick'); } // «Таран-пролом»
+      if (this.tal('dsZap') && (this.dzT -= dt) <= 0) { this.dzT = 0.07; const t = findTarget(this.cx, this.cy, 48); if (t) zap(this.cx, this.cy, t, 1, this, 0.6); } // «Грозовой рывок»
       const want = 320 * dt, m = this.move(want);
       if (this.perks.mtrail && this.perks.mines) { // «Минный след»
         this.aux.dashDist += m;
@@ -515,39 +536,61 @@ class Player extends Tank {
     const charged = !!this.perks.wait && G.time - this.lastShot >= 1.5;
     this.lastShot = G.time;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
-    const angs = s.spread ? (s.pellets >= 5 ? [0, -0.07, 0.07, -0.14, 0.14] : [0, -0.08, 0.08]) : [0]; // дробь кучная
-    const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7;
+    const angs = !s.spread ? [0] : s.pellets >= 7 ? [0, -0.06, 0.06, -0.12, 0.12, -0.18, 0.18] // дробь кучная
+      : s.pellets >= 5 ? [0, -0.07, 0.07, -0.14, 0.14] : [0, -0.08, 0.08];
+    const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7, adren = this.adren > 0 ? 2 : 1; // «Адреналин»
     for (const a of angs) {
       const ch = charged && a === 0;
       G.bullets.push(new Bullet(bx, by, Math.cos(base + a) * s.bspeed, Math.sin(base + a) * s.bspeed, 'player', this, {
-        dmg: s.dmg * (ch ? 3 : 1), power: s.power, pierce: s.pierce + (ch ? 1 : 0), bounce: s.bounce, explosive: s.explosive,
-        size: s.dmg > 1 || ch ? 5 : 4, counts: a === 0, fx: s.fx, col: elemCol(s.fx), charged: ch,
+        dmg: s.dmg * (ch ? 3 : 1) * adren, power: s.power, pierce: s.pierce + (ch ? 1 : 0), bounce: s.bounce, explosive: s.explosive,
+        size: s.dmg > 1 || ch || adren > 1 ? 5 : 4, counts: a === 0, fx: s.fx, col: elemCol(s.fx), charged: ch, ion: !!this.perks.ion,
       }));
     }
     G.effects.push(new Boom(bx + DX[this.dir] * 2, by + DY[this.dir] * 2, charged ? 6 : 3, { dur: charged ? 0.15 : 0.08, quiet: true }));
     Sound.play(charged ? 'cannon' : 'shoot');
   }
   trySpecial() {
-    if (this.scd > 0) { Sound.play('deny'); return; }
+    if (this.charges <= 0) { Sound.play('deny'); return; }
     const C = CLASSES[this.cls], s = this.stats;
-    this.scd = C.cd * s.cdMul;
+    this.charges--;
+    if (this.scd <= 0) this.scd = C.cd * s.cdMul;
     if (C.special === 'volley') {
-      const st = !!this.perks.steelstorm; // «Стальной шторм»: ломает сталь и прошивает насквозь
-      for (let i = 0; i < 16; i++) {
-        const a = i / 16 * Math.PI * 2;
-        G.bullets.push(new Bullet(this.cx + Math.cos(a) * 7, this.cy + Math.sin(a) * 7, Math.cos(a) * s.bspeed, Math.sin(a) * s.bspeed, 'player', this,
-          { dmg: s.dmg, power: s.power || st, pierce: s.pierce + (st ? 2 : 0), drill: st ? 4 : 0, explosive: s.explosive,
-            size: s.dmg > 1 ? 5 : 4, fx: s.fx, col: st ? '#d8d8ec' : elemCol(s.fx) }));
-      }
-      G.effects.push(new RingFx(this.cx, this.cy, 4, 20, '#fcd820', 0.3));
-      Sound.play('special');
+      this.volley(0);
+      if (this.tal('vlDouble')) later(0.3, () => { if (!this.dead) this.volley(0.5); }); // «Двойной залп»: вторая волна в просветы первой
     } else if (C.special === 'dash') {
-      this.dashT = 0.24; this.inv = Math.max(this.inv, 0.45); this.dashHits = new Set(); this.aux.dashDist = 0;
+      const dur = this.tal('dsLong') ? 0.31 : 0.24;
+      this.dashT = dur; this.inv = Math.max(this.inv, dur + 0.21); this.dashHits = new Set(); this.aux.dashDist = 0; this.dzT = 0;
+      if (this.tal('dsBuff')) this.adren = dur + 2;
       Sound.play('dash');
     } else {
-      this.barrier = 3;
+      this.barrier = 3 + this.tal('shDur');
+      if (this.tal('shWave')) this.shockwave();
       Sound.play('shield');
     }
+  }
+  volley(off) {
+    const s = this.stats, st = !!this.perks.steelstorm; // «Стальной шторм»: ломает сталь и прошивает насквозь
+    const n = this.tal('vlMore') ? 20 : 16, drill = st ? 4 : this.tal('vlDrill') ? 2 : 0, homing = this.tal('vlHome') ? 2.5 : 0;
+    for (let i = 0; i < n; i++) {
+      const a = (i + off) / n * Math.PI * 2;
+      G.bullets.push(new Bullet(this.cx + Math.cos(a) * 7, this.cy + Math.sin(a) * 7, Math.cos(a) * s.bspeed, Math.sin(a) * s.bspeed, 'player', this,
+        { dmg: s.dmg, power: s.power || st, pierce: s.pierce + (st ? 2 : 0), drill, explosive: s.explosive, homing,
+          size: s.dmg > 1 ? 5 : 4, fx: s.fx, col: drill ? '#d8d8ec' : elemCol(s.fx) }));
+    }
+    G.effects.push(new RingFx(this.cx, this.cy, 4, 20, '#fcd820', 0.3));
+    Sound.play('special');
+  }
+  shockwave() { // «Ударная волна»: включение щита бьёт и отбрасывает врагов рядом
+    G.effects.push(new RingFx(this.cx, this.cy, 6, 46, '#e8fcff', 0.35), new RingFx(this.cx, this.cy, 4, 40, '#3c78f8', 0.3));
+    for (const e of G.enemies) {
+      if (!e.alive) continue;
+      const dx = e.cx - this.cx, dy = e.cy - this.cy;
+      if (Math.hypot(dx, dy) > 46) continue;
+      e.takeHit(2, this);
+      if (e.alive) e.push(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0), 16);
+    }
+    if (bossLive()) { const a = bossAim(); if (dist(a.x, a.y, this.cx, this.cy) < 60) bossHit(G.boss.hitTest(a.x, a.y, 4), 2, this); }
+    G.shake = Math.max(G.shake, 3);
   }
   hurt(dmg) {
     if (this.dead || this.inv > 0 || this.helmet > 0 || this.barrier > 0 || this.dashT > 0 || G.state !== 'play') return false;
@@ -562,6 +605,17 @@ class Player extends Tank {
     this.hp -= dmg; this.inv = 1.2; this.flash = 0.1;
     G.shake = Math.max(G.shake, 4);
     Sound.play('hurt');
+    if (this.hp <= 0 && this.tal('second') && !this.secondUsed) { // «Второй шанс»
+      this.secondUsed = true; this.hp = Math.max(1, Math.ceil(this.maxHp / 2)); this.inv = 2.5;
+      G.popups.push(new Popup(this.cx, this.y - 4, tr('ВТОРОЙ ШАНС!'), '#f87878', 1.6));
+      G.effects.push(new RingFx(this.cx, this.cy, 4, 28, '#f87878', 0.5));
+      Sound.play('revive');
+      return true;
+    }
+    if (this.hp === 1 && this.tal('emerg') && !this.emergUsed) { // «Аварийный ремонт»
+      this.emergUsed = true; this.helmet = Math.max(this.helmet, 3);
+      G.popups.push(new Popup(this.cx, this.y - 4, tr('АВАРИЙНЫЙ РЕМОНТ'), '#3cbcfc', 1.4));
+    }
     if (this.hp <= 0) this.die();
     else { this.rumble(0.7, 0.5, 220); if (this.perks.retal) retaliate(this); }
     return true;
@@ -623,7 +677,7 @@ class Player extends Tank {
       circle(g, this.cx, this.cy, 10, ph ? '#3cbcfc' : '#fcfcfc', 3);
     }
     if (this.barrier > 0) {
-      const r = 15 + Math.sin(G.time * 20);
+      const r = this.shieldR - 2 + Math.sin(G.time * 20);
       circle(g, this.cx, this.cy, r, '#a4e4fc', 1);
       circle(g, this.cx, this.cy, r - 2, '#3c78f8', 2);
     }
@@ -881,6 +935,10 @@ class Enemy extends Tank {
     if (this.bonus || Math.random() < G.dropChance * luck)
       G.pickups.push(new Pickup(Math.round(this.x / 8) * 8, Math.round(this.y / 8) * 8, randomPickup()));
     if (this.type === 'kamikaze') explode(this.cx, this.cy, 18, { hurtPlayers: true, silent: true });
+    // мифические синергии на гибели врага
+    if ((this.frozen > 0 || this.thaw === G.time) && by instanceof Player && by.perks.abszero) freezeBurst(this, by);
+    const fb = this.burnBy;
+    if (this.burn > 0 && fb instanceof Player && fb.perks.scorch) explode(this.cx, this.cy, 14, { hurtEnemies: true, hurtBoss: true, by: fb, silent: true });
   }
   draw(g) {
     let pal = this.pal;

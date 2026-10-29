@@ -19,6 +19,7 @@ const PERKS = {
   pierce: { name: 'ПРОБИТИЕ', desc: 'СНАРЯД ПРОШИВАЕТ +1 ЦЕЛЬ НАСКВОЗЬ', icon: '-→', rare: true, max: 2, apply: s => { s.pierce += 1; } },
   explosive: { name: 'ФУГАС', desc: 'СНАРЯДЫ ВЗРЫВАЮТСЯ, ЗАДЕВАЯ СОСЕДЕЙ', icon: '*', rare: true, max: 1, apply: s => { s.explosive = 14; } },
   eshield: { name: 'ЭНЕРГОЩИТ', desc: 'БЛОКИРУЕТ 1 ПОПАДАНИЕ. ЗАРЯД 15 СЕК', icon: '()', rare: true, max: 1, apply: s => { s.eshield = true; } },
+  ap: { name: 'БРОНЕБОЙНЫЕ', desc: 'СНАРЯДЫ ЛОМАЮТ СТАЛЬ', icon: '-#', rare: true, max: 1, apply: s => { s.power = true; } },
   vamp: { name: 'ТРОФЕЙНЫЙ РЕМОНТ', desc: '+1 ПРОЧНОСТЬ ЗА КАЖДЫЕ 12 УБИЙСТВ', icon: '×♥', rare: true, max: 1, apply: s => { s.vamp = true; } },
 
   // стихии снарядов (основное орудие и залп)
@@ -43,7 +44,7 @@ const PERKS = {
   shatter: { name: 'ЛЕДЯНОЙ РАСКОЛ', desc: 'ЗАМОРОЖЕННЫЙ ОТ ВЗРЫВА РАЗЛЕТАЕТСЯ ОСКОЛКАМИ', icon: '❄*', legend: true, parts: ['cryo', 'explosive'] },
   ball: { name: 'ШАРОВАЯ МОЛНИЯ', desc: 'КАЖДЫЙ РИКОШЕТ БЬЁТ МОЛНИЕЙ', icon: '⚡<>', legend: true, parts: ['tesla', 'ricochet'] },
   rail: { name: 'РЕЛЬСОТРОН', desc: '+2 ПРОБИТИЯ, СНАРЯДЫ В 1.5 РАЗА БЫСТРЕЕ', icon: '⚡-→', legend: true, parts: ['tesla', 'pierce'], apply: s => { s.pierce += 2; s.bspeed *= 1.5; } },
-  storm: { name: 'ШРАПНЕЛЬНЫЙ ШТОРМ', desc: '5 ДРОБИН ВМЕСТО 3 И +1 РИКОШЕТ', icon: '<\\/>', legend: true, parts: ['shotgun', 'ricochet'], apply: s => { s.pellets = 5; s.bounce += 1; } },
+  storm: { name: 'ШРАПНЕЛЬНЫЙ ШТОРМ', desc: '5 ДРОБИН ВМЕСТО 3 И +1 РИКОШЕТ', icon: '<\\/>', legend: true, parts: ['shotgun', 'ricochet'], apply: s => { s.pellets = Math.max(s.pellets, 5); s.bounce += 1; } },
   spotter: { name: 'КОРРЕКТИРОВЩИК', desc: 'РАКЕТЫ ЛЕТЯТ В ПОМЕЧЕННЫХ, УРОН ×1.5', icon: '⌖▲', legend: true, parts: ['mark', 'rk'] },
   deton: { name: 'ДЕТОНАТОР', desc: 'ВЗРЫВЫ ПОДРЫВАЮТ ВАШИ МИНЫ, МИНЫ ×1.5', icon: '*●', legend: true, parts: ['explosive', 'mines'] },
   mtrail: { name: 'МИННЫЙ СЛЕД', desc: 'РЫВОК ОСТАВЛЯЕТ ЦЕПОЧКУ МИН', icon: '→●', legend: true, parts: ['mines'], cls: 'scout' },
@@ -55,16 +56,25 @@ const PERKS = {
   hotsaw: { name: 'РАСКАЛЁННЫЕ ПИЛЫ', desc: 'ПИЛЫ ПОДЖИГАЮТ ВРАГОВ', icon: '✲♨', legend: true, parts: ['saw', 'inc'] },
   disch: { name: 'РАЗРЯДНИК', desc: 'БЛОК ЭНЕРГОЩИТОМ ВЫЗЫВАЕТ ЭМИ-ВОЛНУ', icon: '()⚡', legend: true, parts: ['eshield', 'tesla'] },
 
+  // мифические суперсинергии из двух легендарок: в игре появляются, только если изучен одноимённый талант
+  ion: { name: 'ИОННАЯ ПУШКА', desc: 'СНАРЯД БЬЁТ МОЛНИЕЙ ВСЕХ, МИМО КОГО ПРОЛЕТАЕТ', icon: '⚡⚡', myth: true, parts: ['rail', 'ball'] },
+  abszero: { name: 'АБСОЛЮТНЫЙ НОЛЬ', desc: 'ЗАМОРОЖЕННЫЙ ПРИ ГИБЕЛИ ЗАМОРАЖИВАЕТ ВСЕХ ВОКРУГ', icon: '❄❄', myth: true, parts: ['thermo', 'shatter'] },
+  thunder: { name: 'ГРОЗОВАЯ КАРТЕЧЬ', desc: '7 ДРОБИН, МОЛНИЯ ТЕСЛЫ БЬЁТ 4 ЦЕЛИ', icon: '⚡\\|/', myth: true, parts: ['storm', 'ball'], apply: s => { s.pellets = Math.max(s.pellets, 7); } },
+  carpet: { name: 'КОВРОВАЯ БОМБАРДИРОВКА', desc: 'МЕТКА ВЫЗЫВАЕТ НА ЦЕЛЬ ЗАЛП ИЗ 4 БОМБ', icon: '⌖⌒', myth: true, parts: ['spotter', 'artstrike'] },
+  whirl: { name: 'ОГНЕННЫЙ ВИХРЬ', desc: '+1 ПИЛА, ПИЛЫ ШИРЕ И ОСТАВЛЯЮТ ОГОНЬ', icon: '✲♨✲', myth: true, parts: ['grinder', 'hotsaw'] },
+  scorch: { name: 'ВЫЖЖЕННАЯ ЗЕМЛЯ', desc: 'МИНЫ ОСТАВЛЯЮТ ПЛАМЯ, ГОРЯЩИЕ ВРАГИ ВЗРЫВАЮТСЯ', icon: '♨●', myth: true, parts: ['napalm', 'deton'] },
+  chain: { name: 'ЦЕПНАЯ РЕАКЦИЯ', desc: 'ВЗРЫВ МИНЫ РАССЫПАЕТ 3 БОМБЫ', icon: '●**', myth: true, parts: ['deton', 'cluster'] },
+
   // карты с особым эффектом
   shards: { name: 'ОСКОЛКИ', desc: 'РАЗБИТЫЙ КИРПИЧ РАНИТ ВРАГОВ ОСКОЛКАМИ', icon: '∴', max: 1 },
   retal: { name: 'ОТВЕТНЫЙ ОГОНЬ', desc: 'ПОЛУЧИВ УРОН, ВЫПУСКАЕТ 8 СНАРЯДОВ', icon: '<•>', rare: true, max: 1 },
   wait: { name: 'ВЫЖИДАНИЕ', desc: 'ПОСЛЕ 1.5 С БЕЗ ВЫСТРЕЛОВ СНАРЯД ×3 И НАСКВОЗЬ', icon: '⌛', rare: true, max: 1 },
 };
-for (const k in PERKS) if (PERKS[k].legend) PERKS[k].max = 1;
+for (const k in PERKS) if (PERKS[k].legend || PERKS[k].myth) PERKS[k].max = 1;
 // синергия доступна, когда у игрока есть все её части (и нужный класс)
 const synReady = (p, id) => PERKS[id].parts.every(k => p.perks[k]) && (!PERKS[id].cls || p.cls === PERKS[id].cls);
 const SYN_OF = {}; // часть -> синергии, в которые она входит
-for (const k in PERKS) if (PERKS[k].legend) for (const part of PERKS[k].parts) (SYN_OF[part] = SYN_OF[part] || []).push(k);
+for (const k in PERKS) if (PERKS[k].legend || PERKS[k].myth) for (const part of PERKS[k].parts) (SYN_OF[part] = SYN_OF[part] || []).push(k);
 
 const MODS = [
   { id: 'armored', name: 'БРОНЕКОЛОННА', desc: 'ВРАГИ ПОЛУЧАЮТ +1 ПРОЧНОСТЬ' },
@@ -149,11 +159,12 @@ function classicSpawnSpot() {
   return { x: bx * BLK, y: by * BLK };
 }
 
-// сила команды: средняя сумма уровней улучшений и оружия (капремонт не в счёт) — по ней крепчают враги и боссы
+// сила команды: средняя сумма уровней улучшений и оружия (капремонт и бесплатные бонусы талантов не в счёт) — по ней крепчают враги и боссы
 function teamPower() {
   const ps = G.players;
   if (!ps.length) return 0;
-  return ps.reduce((a, p) => a + p.weapon + Object.keys(p.perks).reduce((s, k) => s + (k === 'repair' ? 0 : p.perks[k]), 0), 0) / ps.length;
+  return ps.reduce((a, p) => a + Math.max(0, p.weapon - p.baseWeapon) +
+    Object.keys(p.perks).reduce((s, k) => s + (k === 'repair' ? 0 : p.perks[k] - (p.base[k] || 0)), 0), 0) / ps.length;
 }
 
 function sectorInfo(depth) {
@@ -203,9 +214,11 @@ function updateFlow() {
 // ctrls — устройство каждого игрока; в одиночной игре — все устройства сразу
 function newRun(classes, ctrls, colors) {
   G.players = classes.map((c, i) => new Player(i, c, classes.length > 1 && ctrls ? ctrls[i] : ALL_CTRL, colors ? colors[i] : i));
-  G.depth = 1; G.runTime = 0; G.newRecord = false;
+  G.depth = 1; G.runTime = 0; G.newRecord = false; G.runMedals = 0;
   G.bossAlt = BOSS_SETS.map(() => randi(0, 1)); // какой из двух боссов биома встретится в этом забеге
-  startSector();
+  G.players.forEach(applyTalents);
+  G.startQ = startPicks(); // таланты «на выбор» (стихия, система): экраны выбора до первого сектора
+  if (G.startQ.length) openStartPick(); else startSector();
 }
 
 function startSector() {
@@ -260,6 +273,8 @@ function sectorClear() {
   Sound.play('clear');
   G.healMsg = G.info.boss ? 'ПОЛНЫЙ РЕМОНТ' : '+1 ПРОЧНОСТЬ';
   for (const p of G.players) if (!p.dead) p.hp = Math.min(p.maxHp, p.hp + 1 + p.stats.fieldRepair + (G.info.boss ? 99 : 0));
+  const m = sectorMedals(G.info); // медали начисляются сразу: выход в меню их не отнимет
+  G.runMedals += m; Talents.add(m);
   saveBest();
 }
 
@@ -278,28 +293,35 @@ function cantReason(p, id) {
   const P = PERKS[id];
   if ((p.perks[id] || 0) >= P.max) return 'МАКС.';
   if (P.legend && !synReady(p, id)) return 'НЕТ ЧАСТЕЙ';
-  if (P.aux && !p.perks[id] && auxCount(p) >= 2) return 'НЕТ СЛОТА';
+  if (P.aux && !p.perks[id] && auxCount(p) >= auxMax()) return 'НЕТ СЛОТА';
   return '';
 }
 const canTake = (p, id) => !cantReason(p, id);
-function openPerks() {
-  const n = G.mod ? 4 : 3, rareRich = G.info.boss;
-  const pool = Object.keys(PERKS).filter(id => G.players.some(p => canTake(p, id)));
+const ELEM_IDS = ['inc', 'cryo', 'tesla', 'mark'];
+function dealCards() {
+  const n = (G.mod ? 4 : 3) + (Talents.lv('cards') ? 1 : 0), rareRich = G.info.boss;
+  const pool = Object.keys(PERKS).filter(id => perkAllowed(id) && G.players.some(p => canTake(p, id)));
   const cards = [];
   while (cards.length < n && pool.length) {
     const w = {};
     for (const id of pool) {
       const P = PERKS[id];
-      w[id] = P.legend ? 14 : P.aux ? (rareRich ? 6 : 5) : P.rare ? (rareRich ? 10 : 3) : (rareRich ? 2 : 10);
+      w[id] = P.myth ? 30 : P.legend ? 14 : P.aux ? (rareRich ? 6 : 5) : P.rare ? (rareRich ? 10 : 3) : (rareRich ? 2 : 10);
+      if (ELEM_IDS.includes(id) && Talents.lv('elems')) w[id] *= 2; // «Знаток стихий»
     }
     if (G.players.every(p => p.hp >= p.maxHp) && w.repair) w.repair = 0.5;
     const id = weighted(w);
     cards.push(id); pool.splice(pool.indexOf(id), 1);
   }
-  const start = [0, cards.length - 1, cards.length >> 1, 1, cards.length - 2, 0].map(k => clamp(k, 0, cards.length - 1)); // 1P слева, 2P справа, 3P посередине
-  G.perk = { cards, sel: G.players.map((p, i) => start[i]), done: G.players.map(() => false), t: 0, doneT: 0 };
+  return cards;
+}
+// start — id таланта, если это стартовый выбор (стихия или доп. система): карта бесплатная и врагов не усиливает
+function openPerks(cards = dealCards(), start = null) {
+  const first = [0, cards.length - 1, cards.length >> 1, 1, cards.length - 2, 0].map(k => clamp(k, 0, cards.length - 1)); // 1P слева, 2P справа, 3P посередине
+  G.perk = { cards, sel: G.players.map((p, i) => first[i]), done: G.players.map(() => false), t: 0, doneT: 0, start, rerolled: false };
   G.state = 'perk';
 }
+function openStartPick() { const q = G.startQ.shift(); openPerks(q.cards, q.id); }
 
 function gameOver() {
   G.state = 'gameover'; G.overT = 0;
@@ -316,6 +338,7 @@ function update(dt) {
   if (Input.hit(['KeyM'])) { Sound.musicOn = !Sound.musicOn; }
   switch (G.state) {
     case 'title': updateTitle(dt); break;
+    case 'talents': updateTalents(dt); break;
     case 'help': if (Input.hit(KEYS_BACK) || anyCtrl('fire')) { G.state = 'title'; Sound.play('select'); } break;
     case 'select': updateSelect(dt); break;
     case 'intro': updateIntro(dt); break;
@@ -330,8 +353,8 @@ function update(dt) {
 
 function toTitle() { G.state = 'title'; G.menuSel = 0; Music.play('title'); Sound.play('select'); }
 
-const MENU = ['1 ИГРОК', 'КООП: ДО 6 ИГРОКОВ', 'ОНЛАЙН: СОЗДАТЬ КОМНАТУ', 'ОНЛАЙН: ВОЙТИ ПО КОДУ', 'УПРАВЛЕНИЕ', 'ЯЗЫК: РУССКИЙ']; // последний пункт — переключатель языка
-const MENU_COOP = 1, MENU_HOST = 2, MENU_JOIN = 3, MENU_HELP = 4, MENU_LANG = 5;
+const MENU = ['1 ИГРОК', 'КООП: ДО 6 ИГРОКОВ', 'ТАЛАНТЫ', 'ОНЛАЙН: СОЗДАТЬ КОМНАТУ', 'ОНЛАЙН: ВОЙТИ ПО КОДУ', 'УПРАВЛЕНИЕ', 'ЯЗЫК: РУССКИЙ']; // последний пункт — переключатель языка
+const MENU_COOP = 1, MENU_TAL = 2, MENU_HOST = 3, MENU_JOIN = 4, MENU_HELP = 5, MENU_LANG = 6;
 function updateTitle() {
   Music.play('title');
   if (anyCtrl('up')) { G.menuSel = (G.menuSel + MENU.length - 1) % MENU.length; Sound.play('select'); }
@@ -342,6 +365,7 @@ function updateTitle() {
   if (anyCtrl('fire')) {
     Sound.play('confirm');
     if (G.menuSel === MENU_HELP) { G.state = 'help'; return; }
+    if (G.menuSel === MENU_TAL) { openTalents(); return; }
     if (G.menuSel === MENU_JOIN) { Net.askJoin(); return; }
     if (G.menuSel === MENU_HOST) Net.host();
     openLobby(G.menuSel !== 0);
@@ -500,15 +524,26 @@ function updatePerk(dt) {
       const id = P.cards[P.sel[i]];
       if (!canTake(p, id)) { Sound.play('deny'); return; }
       p.perks[id] = (p.perks[id] || 0) + 1;
+      if (P.start) p.base[id] = (p.base[id] || 0) + 1;
       if (PERKS[id].onPick) PERKS[id].onPick(p);
       p.recalc();
       P.done[i] = true;
       Sound.play('confirm');
     }
   });
+  // «Пересдача»: раз за сектор, пока никто не взял карту, СПЕЦ перебрасывает карты
+  if (!P.start && !P.rerolled && Talents.lv('reroll') && P.t > 0.5 && !P.done.some(Boolean) && G.players.some(p => Input.hit(p.ctrl.special))) {
+    P.cards = dealCards(); P.rerolled = true;
+    P.sel = P.sel.map(k => clamp(k, 0, P.cards.length - 1));
+    Sound.play('confirm');
+  }
   if (P.done.every(Boolean)) {
     P.doneT += dt;
-    if (P.doneT > 0.6) { G.depth++; startSector(); }
+    if (P.doneT > 0.6) {
+      if (!P.start) { G.depth++; startSector(); }
+      else if (G.startQ.length) openStartPick();
+      else startSector();
+    }
   }
 }
 
@@ -541,6 +576,7 @@ function render() {
   switch (G.state) {
     case 'title': drawTitle(); break;
     case 'help': drawHelp(); break;
+    case 'talents': drawTalents(); break;
     case 'select': drawSelect(); break;
     case 'intro': drawWorld(); drawHUD(); drawIntro(); break;
     case 'play': drawWorld(); drawHUD(); if (G.paused) drawPause(); break;
@@ -659,6 +695,7 @@ function drawPlayerHUD(p, x, compact) {
   const bw = compact ? 20 : 32, px = x + bw + 3, ps = compact ? 3 : 4;
   rect(ctx, x, 9, bw, 4, '#202020');
   rect(ctx, x, 9, Math.round(bw * k), 4, k >= 1 ? (blink(4) ? '#fcfcfc' : p.color) : '#3c78a8');
+  if (p.charges > 1) rect(ctx, x + bw - 3, 10, 2, 2, '#06060c'); // накоплен второй заряд спецприёма
   for (let i = 0; i < MAX_WEAPON; i++) rect(ctx, px + i * ps, 9, ps - 1, 4, i < p.weapon ? (i >= 5 ? '#fc9838' : '#fcd820') : '#2c2c2c');
   text(String(p.score).padStart(6, '0'), x + (compact ? 92 : 122), 8, '#d0d0d0', 1, 'right');
 }
@@ -719,8 +756,14 @@ function drawPause() {
 function drawPerk() {
   const P = G.perk;
   rect(ctx, 0, 0, W, H, '#06060c');
-  text('ВЫБЕРИТЕ УЛУЧШЕНИЕ', W / 2, 8, '#fcd820', 2, 'center', '#5c3c00');
-  text(tr('СЕКТОР') + ' ' + sectorName(G.depth) + ' ' + tr('ПРОЙДЕН') + (G.info.boss ? ' ' + tr('- РЕДКИЕ НАГРАДЫ!') : ''), W / 2, 27, '#7c7c7c', 1, 'center');
+  if (P.start) {
+    text('СТАРТОВЫЙ БОНУС', W / 2, 8, '#3cbcfc', 2, 'center', '#002c5c');
+    text(tr('ТАЛАНТ:') + ' ' + tr(TALENTS[P.start].name), W / 2, 27, '#7c7c7c', 1, 'center');
+  } else {
+    text('ВЫБЕРИТЕ УЛУЧШЕНИЕ', W / 2, 8, '#fcd820', 2, 'center', '#5c3c00');
+    text(tr('СЕКТОР') + ' ' + sectorName(G.depth) + ' ' + tr('ПРОЙДЕН') + (G.info.boss ? ' ' + tr('- РЕДКИЕ НАГРАДЫ!') : ''), W / 2, 27, '#7c7c7c', 1, 'center');
+    if (Talents.lv('reroll') && !P.rerolled && !P.done.some(Boolean)) text('СПЕЦ - ПЕРЕБРОСИТЬ КАРТЫ', W / 2, 36, blink(2) ? '#3cbcfc' : '#3c78a8', 1, 'center');
+  }
   const n = P.cards.length, gap = 6, cw = Math.floor((W - 24 - gap * (n - 1)) / n), ch = 160, y0 = 46;
   for (let i = 0; i < n; i++) drawCard(P, i, 12 + i * (cw + gap), y0, cw, ch);
   text(G.players.length > 1 ? 'КАЖДЫЙ СВОИМ УСТРОЙСТВОМ: ВЛЕВО/ВПРАВО - ВЫБОР, ОГОНЬ - ВЗЯТЬ' : '←/→ ВЫБОР   ПРОБЕЛ/ENTER - ВЗЯТЬ',
@@ -730,6 +773,7 @@ function drawPerk() {
   text(ow.length > 62 ? ow.slice(0, 62) : ow, W / 2, 244, '#4c4c4c', 1, 'center');
 }
 function cardStyle(pk) {
+  if (pk.myth) return { b: '#d878f8', i: '#3c105c', icon: '#d878f8', label: 'МИФИЧЕСКОЕ' };
   if (pk.legend) return { b: '#f87800', i: '#4c2000', icon: '#f87800', label: 'ЛЕГЕНДАРНОЕ' };
   if (pk.aux) return { b: '#3cbcfc', i: '#103c5c', icon: '#3cbcfc', label: 'СИСТЕМА' };
   if (pk.rare) return { b: '#3cbcfc', i: '#103c5c', icon: '#3cbcfc', label: 'РЕДКОЕ' };
@@ -737,8 +781,8 @@ function cardStyle(pk) {
 }
 // карта-часть синергии: «СИНЕРГИЯ!», если её взятие сразу открывает синергию кому-то из игроков
 function synHint(id) {
-  const syns = SYN_OF[id];
-  if (!syns) return null;
+  const syns = (SYN_OF[id] || []).filter(perkAllowed);
+  if (!syns.length) return null;
   const opens = G.players.some(p => canTake(p, id) && syns.some(s => !p.perks[s] &&
     PERKS[s].parts.every(k => k === id || p.perks[k]) && (!PERKS[s].cls || p.cls === PERKS[s].cls)));
   return opens ? 'СИНЕРГИЯ!' : 'В СИНЕРГИИ';
@@ -748,7 +792,7 @@ function drawCard(P, i, x, y, w, h) {
   rect(ctx, x, y, w, h, '#000');
   frame(x, y, w, h, st.b);
   frame(x + 2, y + 2, w - 4, h - 4, st.i);
-  text(pk.icon, x + w / 2, y + 12, st.icon, 3, 'center');
+  text(pk.icon, x + w / 2, y + 12, st.icon, textWidth(pk.icon, 3) > w - 6 ? 2 : 3, 'center');
   const maxc = Math.floor((w - 10) / 6);
   let yy = y + 42;
   for (const l of wrap(pk.name, maxc)) { text(l, x + w / 2, yy, '#fcfcfc', 1, 'center'); yy += 9; }
@@ -795,8 +839,9 @@ function drawTitle() {
   drawBrickText('ТАНКИ', W / 2, 22, 8);
   text('8-БИТНЫЙ РОГАЛИК', W / 2, 88, '#fcd820', 2, 'center', '#7c4000');
   MENU.forEach((s, i) => {
-    const y = 106 + i * 10, sel = G.menuSel === i;
-    text(s, W / 2 - 40, y, sel ? '#fcfcfc' : '#7c7c7c');
+    const y = 105 + i * 9, sel = G.menuSel === i;
+    const w = text(s, W / 2 - 40, y, sel ? '#fcfcfc' : '#7c7c7c');
+    if (i === MENU_TAL && Talents.medals) text('✪' + Talents.medals, W / 2 - 34 + w, y, '#fcd820');
     if (sel) ctx.drawImage(TankGfx.get('std', 'p1')[Math.floor(G.time * 8) % 2][1], W / 2 - 62, y - 4);
   });
   const pads = Input.pads;
@@ -827,7 +872,7 @@ function drawHelp() {
     ['#fcd820', 'ДО 6 ИГРОКОВ: ВХОД - ОГОНЬ НА СВОЁМ УСТРОЙСТВЕ'],
     ['#7c7c7c', 'ESC/P - ПАУЗА   M - МУЗЫКА'],
   ];
-  if (Touch.on) L.splice(2, 1, ['#fcfcfc', 'ТЕЛЕФОН: ДЖОЙСТИК СЛЕВА  ● - ОГОНЬ  * - СПЕЦ  II - ПАУЗА']);
+  if (Touch.on) L.splice(2, 1, ['#fcfcfc', 'ТЕЛЕФОН: ДЖОЙСТИК СЛЕВА  ● - ОГОНЬ  * - СПЕЦ  P - ПАУЗА']);
   L.forEach(([c, s], i) => text(s, W / 2, 26 + i * 9, c, 1, 'center'));
   text('ПРАВИЛА', W / 2, 84, '#fcd820', 1, 'center');
   const R = [
@@ -950,10 +995,14 @@ function drawStats(y) {
   text(tr('ОБЩИЙ СЧЁТ:') + ' ' + totalScore() + '    ' + tr('ВРЕМЯ:') + ' ' + Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'), W / 2, ty, '#bcbcbc', 1, 'center');
   text(G.newRecord ? 'НОВЫЙ РЕКОРД!' : tr('РЕКОРД: СЕКТОР') + ' ' + sectorName(G.best.depth) + '  ' + G.best.score, W / 2, ty + 14, G.newRecord ? (blink(4) ? '#fcd820' : '#f83800') : '#7c7c7c', 1, 'center');
 }
+function drawMedals(y) {
+  text(tr('МЕДАЛИ ЗА ЗАБЕГ:') + ' +' + (G.runMedals || 0) + ' ✪   ' + tr('ВСЕГО:') + ' ' + Talents.medals, W / 2, y, '#fcd820', 1, 'center');
+}
 function drawGameOver() {
   drawBrickText('КОНЕЦ', W / 2, 30, 6);
   text(tr('ЗАБЕГ ОКОНЧЕН НА СЕКТОРЕ') + ' ' + sectorName(G.depth), W / 2, 90, '#f83800', 1, 'center');
   text(tr('БИОМ:') + ' ' + tr(BIOMES[sectorInfo(G.depth).biome].name), W / 2, 102, '#7c7c7c', 1, 'center');
+  drawMedals(113);
   drawStats(126);
   if (G.overT > 1.2 && blink(2)) text('ОГОНЬ - В МЕНЮ', W / 2, 220, '#fcfcfc', 1, 'center');
 }
@@ -962,6 +1011,7 @@ function drawVictory() {
   text('ПОБЕДА!', W / 2, 26, '#fcd820', 4, 'center', '#7c4000');
   text((G.boss && G.boss.deadText) || 'ЦИТАДЕЛЬ ОМЕГА УНИЧТОЖЕНА', W / 2, 70, '#fcfcfc', 1, 'center');
   text(tr('ЦИКЛ') + ' ' + (sectorInfo(G.depth).loop + 1) + ' ' + tr('ПРОЙДЕН'), W / 2, 82, '#7c7c7c', 1, 'center');
+  drawMedals(94);
   drawStats(108);
   if (G.overT > 1.5) {
     text('ОГОНЬ - НОВЫЙ ЦИКЛ (ВРАГИ СИЛЬНЕЕ)', W / 2, 206, blink(2) ? '#fcfcfc' : '#bcbcbc', 1, 'center');

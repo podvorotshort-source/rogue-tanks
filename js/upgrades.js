@@ -95,7 +95,7 @@ function bulletHitsEnemy(b, e) {
   let dmg = b.dmg;
   if (p && b.explosive && e.frozen > 0 && p.perks.shatter) { shatter(e, p); return; } // ЛЕДЯНОЙ РАСКОЛ прямым попаданием
   if (p && fx && fx.inc && e.frozen > 0 && p.perks.thermo) { // ТЕРМОШОК
-    dmg *= 3; e.frozen = 0;
+    dmg *= 3; e.frozen = 0; e.thaw = G.time;
     G.effects.push(new Boom(e.cx, e.cy, 12, { pal: ICE_COLS, quiet: true }), new Boom(e.cx, e.cy, 14));
     G.popups.push(new Popup(e.cx, e.y - 10, '×3', '#fc7c38'));
     Sound.play('boom');
@@ -105,9 +105,9 @@ function bulletHitsEnemy(b, e) {
     if (e.alive) {
       if (fx.inc) e.ignite(3, p);
       if (fx.cryo) e.chill();
-      if (fx.mark) e.mark = 4;
+      if (fx.mark) { e.mark = 4; carpetStrike(e.cx, e.cy, p); }
     }
-    if (fx.tesla) chainLightning(e.cx, e.cy, 2, 60, 1, p, new Set([e]));
+    if (fx.tesla) chainLightning(e.cx, e.cy, p && p.perks.thunder ? 4 : 2, 60, 1, p, new Set([e])); // «Грозовая картечь»: 4 цели
   }
 }
 function bulletHitsBoss(b, part) {
@@ -115,9 +115,25 @@ function bulletHitsBoss(b, part) {
   const r = bossHit(part, b.dmg, b.owner);
   if (r === 'reflect' || !fx) return r;
   if (fx.inc) { B.burn = 3; B.burnPart = part; B.burnBy = p; }
-  if (fx.mark) B.mark = 4;
-  if (fx.tesla) chainLightning(b.x, b.y, 2, 70, 1, p);
+  if (fx.mark) { B.mark = 4; const a = bossAim(); carpetStrike(a.x, a.y, p); }
+  if (fx.tesla) chainLightning(b.x, b.y, p && p.perks.thunder ? 4 : 2, 70, 1, p);
   return r;
+}
+// КОВРОВАЯ БОМБАРДИРОВКА: метка вызывает залп из 4 бомб (не чаще раза в 1.5 с)
+function carpetStrike(x, y, p) {
+  if (!p || !p.perks.carpet || G.time - (p.carpetT || -9) < 1.5) return;
+  p.carpetT = G.time;
+  for (let i = 0; i < 4; i++) {
+    const tx = clamp(x + rand(-14, 14), 4, FW - 4), ty = clamp(y + rand(-14, 14), 4, FH - 4);
+    G.mortars.push(new Mortar(tx, -10, tx, ty, 0.6 + i * 0.12, { r: 14, h: 0, dmg: 2, by: p, col: '#3c3c3c' }));
+  }
+  Sound.play('mortar');
+}
+// АБСОЛЮТНЫЙ НОЛЬ: замороженный при гибели замораживает всех вокруг (цепочкой)
+function freezeBurst(e, p) {
+  G.effects.push(new RingFx(e.cx, e.cy, 4, 44, '#e8fcff', 0.4), new Boom(e.cx, e.cy, 16, { pal: ICE_COLS, quiet: true }));
+  for (const o of G.enemies) if (o.alive && o !== e && dist(o.cx, o.cy, e.cx, e.cy) < 44) { o.frozen = Math.max(o.frozen, 2.5); o.chillN = 0; }
+  Sound.play('ice');
 }
 function updateBossStatus(dt) {
   const B = G.boss;
@@ -163,7 +179,7 @@ function drawStatus(g, e) {
 
 // ---------- синергии взрывов ----------
 function shatter(e, p) { // ЛЕДЯНОЙ РАСКОЛ
-  e.frozen = 0;
+  e.frozen = 0; e.thaw = G.time;
   G.effects.push(new Boom(e.cx, e.cy, 14, { pal: ICE_COLS }));
   for (let i = 0; i < 10; i++) {
     const a = i / 10 * Math.PI * 2;
@@ -220,7 +236,14 @@ class Mine {
   blow() {
     if (this.dead) return;
     this.dead = true;
-    explode(this.x, this.y, 16, { hurtEnemies: true, hurtBoss: true, dmg: this.dmg, by: this.owner });
+    const p = this.owner;
+    explode(this.x, this.y, 16, { hurtEnemies: true, hurtBoss: true, dmg: this.dmg, by: p });
+    if (p.perks.scorch) fireArea(this.x, this.y, 18, 4, p); // «Выжженная земля»
+    if (p.perks.chain) for (let i = 0; i < 3; i++) { // «Цепная реакция»: мина рассыпает бомбы
+      const a = i / 3 * Math.PI * 2 + rand(-0.4, 0.4), d = rand(18, 26);
+      G.mortars.push(new Mortar(this.x, this.y, clamp(this.x + Math.cos(a) * d, 4, FW - 4), clamp(this.y + Math.sin(a) * d, 4, FH - 4), 0.3 + i * 0.06,
+        { r: 11, h: 14, dmg: 1, by: p, col: '#3c3c3c', sub: true }));
+    }
   }
   draw(g) {
     disc(g, this.x, this.y, 3, '#202020'); disc(g, this.x, this.y, 2, '#545454');
@@ -239,8 +262,10 @@ function detonateNear(x, y, r, p) {
 
 // ---------- доп. системы (стреляют сами) ----------
 const newAuxState = () => ({ mgA: -Math.PI / 2, mgCd: 0.5, mgBurst: 0, mgBt: 0, mineCd: 0.5, mlx: null, mly: null, rkCd: 1.5, coilCd: 0.5, dA: 0, dCd: 0.4, ramBoss: 0, dashDist: 0,
-  mortCd: 1.5, sawA: 0, sawHit: new WeakMap(), sawBoss: 0 });
-const sawPos = (p, i) => { const a = p.aux.sawA + i / p.perks.saw * Math.PI * 2; return [p.cx + Math.cos(a) * 20, p.cy + Math.sin(a) * 20]; };
+  mortCd: 1.5, sawA: 0, sawHit: new WeakMap(), sawBoss: 0, fwT: 0 });
+// «Огненный вихрь»: на одну пилу больше и шире круг
+const sawN = p => (p.perks.saw || 0) + (p.perks.whirl && p.perks.saw ? 1 : 0);
+const sawPos = (p, i) => { const a = p.aux.sawA + i / sawN(p) * Math.PI * 2, r = p.perks.whirl ? 26 : 20; return [p.cx + Math.cos(a) * r, p.cy + Math.sin(a) * r]; };
 const dronePos = (p, i) => { const a = p.aux.dA + i * Math.PI; return [p.cx + Math.cos(a) * 22, p.cy + Math.sin(a) * 15]; };
 function frontStrip(p, depth) {
   const d = p.dir, x = p.x, y = p.y;
@@ -371,8 +396,11 @@ function updateAux(p, dt) {
   if (lv('saw')) {
     const sdmg = p.perks.grinder ? 2 : 1, hot = !!p.perks.hotsaw; // «Мясорубка», «Раскалённые пилы»
     A.sawA += (p.perks.grinder ? 6.3 : 4.2) * dt; A.sawBoss -= dt;
-    for (let i = 0; i < lv('saw'); i++) {
+    const trail = p.perks.whirl && (A.fwT -= dt) <= 0;
+    if (trail) A.fwT = 0.2;
+    for (let i = 0; i < sawN(p); i++) {
       const [sx, sy] = sawPos(p, i);
+      if (trail) fireArea(sx, sy, 5, 1.6, p);
       for (const e of G.enemies) {
         if (!e.alive || !overlap(sx - 4, sy - 4, 8, 8, e.x, e.y, 16, 16) || G.time - (A.sawHit.get(e) || -9) < 0.35) continue;
         A.sawHit.set(e, G.time);
@@ -427,7 +455,7 @@ function drawAux(p, g) {
   }
 }
 function drawSaws(p, g) {
-  const n = p.perks.saw || 0;
+  const n = sawN(p);
   if (!n || p.dead) return;
   for (let i = 0; i < n; i++) {
     const [sx, sy] = sawPos(p, i), r = p.aux.sawA * 3, hot = !!p.perks.hotsaw;
