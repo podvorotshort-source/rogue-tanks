@@ -89,7 +89,7 @@ const MODS = [
 const G = {
   state: 'title', time: 0, players: [], enemies: [], bullets: [], mortars: [], pickups: [], effects: [], particles: [],
   popups: [], spawners: [], tanks: [], queue: [], boss: null, level: null, depth: 1, freeze: 0, shake: 0, flashT: 0,
-  mines: [], fires: new Map(), timers: [], bossAlt: [0, 0, 0, 0],
+  mines: [], fires: new Map(), timers: [],
   bannerT: 0, bannerText: '', bannerCol: '#fff', menuSel: 0, paused: false, pauseSel: 0, scoreMul: 1, dropChance: 0.06,
   enemyMods: { hp: 0, speed: 1, fire: 1, hunt: 0.2, loop: 0, depth: 1 }, killedCount: 0, best: Store.get('tanks_rogue_best', { depth: 0, score: 0 }),
 
@@ -167,11 +167,28 @@ function teamPower() {
     Object.keys(p.perks).reduce((s, k) => s + (k === 'repair' ? 0 : p.perks[k] - (p.base[k] || 0)), 0), 0) / ps.length;
 }
 
+// забег: 12 боссов (перед каждым 3 обычных сектора, по 3 босса на биом) → 6 дуэтов боссов подряд → победа
+// → по желанию бесконечный режим: только обычные сектора с усиленными врагами, крепчающими с каждым сектором
+const SOLO_END = SOLO_BOSSES.length * 4, DUO_END = SOLO_END + DUO_BOSSES.length;
 function sectorInfo(depth) {
   const d = depth - 1;
-  return { biome: Math.floor(d / 4) % 4, stage: d % 4 + 1, loop: Math.floor(d / 16), boss: d % 4 === 3, final: d % 16 === 15 };
+  if (depth <= SOLO_END) {
+    const bi = Math.floor(d / 4);
+    return { kind: 'main', biome: Math.floor(d / 12), stage: d % 12 + 1, boss: d % 4 === 3, bossIdx: bi, bossId: SOLO_BOSSES[bi], final: false };
+  }
+  if (depth <= DUO_END) {
+    const k = depth - SOLO_END - 1;
+    return { kind: 'duo', biome: k % 4, stage: k + 1, boss: true, duo: k, final: depth === DUO_END };
+  }
+  const e = depth - DUO_END; // номер сектора бесконечного режима, с 1
+  return { kind: 'endless', biome: Math.floor((e - 1) / 4) % 4, stage: e, boss: false, endless: e, final: false };
 }
-function sectorName(depth) { const s = sectorInfo(depth); return (s.loop ? tr('Ц') + (s.loop + 1) + ' ' : '') + (s.biome + 1) + '-' + s.stage; }
+function sectorName(depth) {
+  const s = sectorInfo(depth);
+  if (s.kind === 'duo') return tr('ДУЭТ') + ' ' + s.stage;
+  if (s.kind === 'endless') return tr('БЕСК.') + ' ' + s.stage;
+  return (s.biome + 1) + '-' + s.stage;
+}
 
 function enemyPool(d) {
   return {
@@ -215,7 +232,6 @@ function updateFlow() {
 function newRun(classes, ctrls, colors) {
   G.players = classes.map((c, i) => new Player(i, c, classes.length > 1 && ctrls ? ctrls[i] : ALL_CTRL, colors ? colors[i] : i));
   G.depth = 1; G.runTime = 0; G.newRecord = false; G.runMedals = 0;
-  G.bossAlt = BOSS_SETS.map(() => randi(0, 1)); // какой из двух боссов биома встретится в этом забеге
   G.players.forEach(applyTalents);
   G.startQ = startPicks(); // таланты «на выбор» (стихия, система): экраны выбора до первого сектора
   if (G.startQ.length) openStartPick(); else startSector();
@@ -224,24 +240,27 @@ function newRun(classes, ctrls, colors) {
 function startSector() {
   const info = sectorInfo(G.depth);
   G.info = info;
-  const d = (G.depth - 1) % 16 + 1, L = info.loop, extra = G.players.length - 1; // доп. игроки: +враги, +прочность боссов
+  // сложность обычных врагов d: 1 → 16 к последнему одиночному боссу, дальше держится на 16
+  const E = info.endless || 0, d = info.kind === 'main' ? Math.floor((G.depth - 1) * 15 / (SOLO_END - 1)) + 1 : 16;
+  const extra = G.players.length - 1; // доп. игроки: +враги, +прочность боссов
   G.mod = (!info.boss && G.depth >= 2 && Math.random() < 0.45) ? pick(MODS) : null;
   const mod = G.mod ? G.mod.id : '';
-  const bossId = info.boss ? BOSS_SETS[info.biome][(G.bossAlt[info.biome] + L) % 2] : null; // случайный из двух, в следующем цикле — другой
-  G.level = info.boss ? generateBossArena(info.biome, bossId) : generateLevel(info.biome, { sideSpawns: d >= 5, iceMul: mod === 'ice' ? 4 : 1 });
+  const arena = info.duo !== undefined ? DUO_BOSSES[info.duo].ids : info.bossId;
+  G.level = info.boss ? generateBossArena(info.biome, arena) : generateLevel(info.biome, { sideSpawns: d >= 5, iceMul: mod === 'ice' ? 4 : 1 });
   G.enemies = []; G.bullets = []; G.mortars = []; G.pickups = []; G.effects = []; G.particles = []; G.popups = []; G.spawners = [];
   G.mines = []; G.fires = new Map(); G.timers = [];
   G.boss = null; G.freeze = 0; G.shake = 0; G.flashT = 0; G.bannerT = 0; G.killedCount = 0; G.flowT = 0; G.barrageT = 3;
   G.gameOverT = 0; G.bossDeadT = 0; G.paused = false; G.flow = null;
-  const power = teamPower(), firstBoss = info.boss && info.biome === 0; // первый босс и его свита — без усиления
+  const power = teamPower(), firstBoss = info.boss && info.bossIdx === 0; // первый босс и его свита — без усиления
+  // бесконечный режим: все враги усиленные, прочность растёт с каждым сектором (+1 и +8% за сектор)
   G.enemyMods = {
-    hp: (mod === 'armored' ? 1 : 0) + L + (firstBoss ? 0 : Math.floor(d / 6)),
-    hpMul: firstBoss ? 1 : 1 + 0.04 * power,
-    speed: (1 + 0.02 * d + 0.1 * L) * (mod === 'blitz' ? 1.35 : 1),
-    fire: (1 + 0.04 * d + 0.2 * L) * (mod === 'blitz' ? 1.25 : 1),
-    hunt: Math.min(0.7, 0.12 + 0.035 * d + 0.1 * L), loop: L, depth: d,
+    hp: (mod === 'armored' ? 1 : 0) + (firstBoss ? 0 : Math.floor(d / 6)) + (E ? 1 + E : 0),
+    hpMul: (firstBoss ? 1 : 1 + 0.04 * power) * (1 + 0.08 * E),
+    speed: (1 + 0.02 * d) * (E ? 1.15 : 1) * (mod === 'blitz' ? 1.35 : 1),
+    fire: (1 + 0.04 * d) * (E ? 1.25 : 1) * (mod === 'blitz' ? 1.25 : 1),
+    hunt: Math.min(0.7, 0.12 + 0.035 * d + (E ? 0.15 : 0)), loop: E ? 1 : 0, depth: d, elite: E > 0,
   };
-  G.scoreMul = (1 + 0.1 * (d - 1) + L) * (G.mod ? 1.5 : 1);
+  G.scoreMul = (1 + 0.1 * (d - 1)) * (info.kind === 'duo' ? 2 : 1) * (E ? 2 + 0.2 * E : 1) * (G.mod ? 1.5 : 1);
   G.dropChance = 0.06 * (mod === 'bounty' ? 2.5 : 1);
   G.players.forEach((p, i) => {
     if (p.dead) { p.dead = false; p.hp = Math.max(1, Math.ceil(p.maxHp / 2)); }
@@ -250,17 +269,20 @@ function startSector() {
   });
   G.queue = [];
   if (!info.boss) {
-    const count = Math.round((9 + d * 1.1) * (1 + 0.5 * extra) * (mod === 'bounty' ? 1.3 : 1)) + L * 4;
+    const count = Math.round((9 + d * 1.1) * (1 + 0.5 * extra) * (mod === 'bounty' ? 1.3 : 1)) + Math.min(16, E);
     const pool = enemyPool(d);
     for (let i = 0; i < count; i++) G.queue.push({ type: weighted(pool), bonus: i === 3 || i === 10 || Math.random() < 0.05 });
     G.total = count;
-    G.maxAlive = Math.min(9 + extra, 3 + Math.floor(d / 3) + 2 * extra);
+    G.maxAlive = Math.min(9 + extra + Math.floor(E / 4), 3 + Math.floor(d / 3) + 2 * extra + Math.floor(E / 3));
     G.spawnInt = Math.max(1.0, 2.6 - d * 0.09);
     G.spawnT = 0.5;
   } else {
     G.total = 0;
-    const tough = info.biome === 0 ? 1 : 1.5 * (1 + 0.04 * power);
-    G.boss = makeBoss(bossId, (1 + 0.6 * extra) * (1 + 0.5 * L) * tough);
+    const pw = (1 + 0.04 * power) * (1 + 0.6 * extra);
+    if (info.kind === 'duo') { // каждый из пары — крепче последнего одиночного босса
+      G.boss = makeDuo(info.duo, (1.5 + 0.12 * info.duo) * pw);
+      if (info.final) G.boss.deadText = 'ВСЕ 18 БОССОВ ПОВЕРЖЕНЫ';
+    } else G.boss = makeBoss(info.bossId, firstBoss ? 1 + 0.6 * extra : (1.2 + 0.06 * info.bossIdx) * pw);
   }
   G.tanks = G.players.slice();
   G.state = 'intro'; G.introT = 0;
@@ -424,7 +446,8 @@ function updateIntro(dt) {
   updateFx(dt);
   if (G.introT >= 2.4) {
     G.state = 'play';
-    if (G.boss) { G.banner(tr('ВНИМАНИЕ!') + ' ' + tr(G.boss.name), '#f83800'); Sound.play('warn'); }
+    if (G.boss) { G.banner(G.boss.subs ? G.boss.name : tr('ВНИМАНИЕ!') + ' ' + tr(G.boss.name), '#f83800'); Sound.play('warn'); }
+    else if (G.info.endless === 1) { G.banner('БЕСКОНЕЧНЫЙ РЕЖИМ', '#f83800'); Sound.play('warn'); }
   }
 }
 
@@ -552,10 +575,9 @@ function updateVictory(dt) {
   updateFx(dt);
   if (G.overT < 1.5) return;
   if (Input.hit(KEYS_BACK)) { toTitle(); return; }
-  if (anyCtrl('fire')) {
+  if (anyCtrl('fire')) { // дальше — бесконечный режим (на экране победы предупреждение)
     for (const p of G.players) { p.dead = false; p.hp = p.maxHp; }
-    G.depth++;
-    startSector();
+    openPerks(); // карта за финальный бой; после выбора — первый сектор бесконечного режима
   }
 }
 
@@ -652,7 +674,7 @@ function drawHUD() {
     else { text(sectorName(G.depth), cx, 1, '#fcfcfc', 1, 'center'); text('× ' + (G.queue.length + G.spawners.length + G.enemies.length), cx, 8, '#a8a8a8', 1, 'center'); }
   } else if (G.boss) {
     const b = G.boss, bx = cx - bw / 2;
-    text(b.name, cx, 1, '#f83800', 1, 'center');
+    text(b.hudName || b.name, cx, 1, '#f83800', 1, 'center');
     rect(ctx, bx - 1, 9, bw + 2, 5, '#3c0000');
     rect(ctx, bx, 10, Math.round(bw * Math.max(0, b.hp) / b.maxHp), 3, b.flash > 0 ? '#fcfcfc' : '#f83800');
   } else {
@@ -710,8 +732,11 @@ function drawIntro() {
   text(tr('СЕКТОР') + ' ' + sectorName(G.depth), W / 2, cy - 44, '#000', 3, 'center');
   text(tr('БИОМ:') + ' ' + tr(BIOMES[info.biome].name), W / 2, cy - 14, '#1c1c1c', 1, 'center');
   if (info.boss) {
-    text('!! БОСС !!', W / 2, cy + 2, blink(6) ? '#a00000' : '#000', 2, 'center');
+    text(G.boss.subs ? '!! ДУЭТ БОССОВ !!' : '!! БОСС !!', W / 2, cy + 2, blink(6) ? '#a00000' : '#000', 2, 'center');
     text(G.boss.name, W / 2, cy + 22, '#000', 1, 'center');
+  } else if (info.endless) {
+    text('БЕСКОНЕЧНЫЙ РЕЖИМ: ВРАГИ УСИЛЕНЫ', W / 2, cy + 2, '#a00000', 1, 'center');
+    text(tr('УНИЧТОЖЬТЕ ВСЕХ ВРАГОВ:') + ' ' + G.total + (G.mod ? '   ' + tr(G.mod.name) : ''), W / 2, cy + 14, '#000', 1, 'center');
   } else if (G.mod) {
     text(tr('МОДИФИКАТОР:') + ' ' + tr(G.mod.name), W / 2, cy + 2, '#801000', 1, 'center');
     text(G.mod.desc, W / 2, cy + 12, '#000', 1, 'center');
@@ -848,7 +873,7 @@ function drawTitle() {
   text(pads.length ? tr('ГЕЙМПАДЫ:') + ' ' + pads.map(padName).join(', ') : 'ГЕЙМПАДЫ: НАЖМИТЕ ЛЮБУЮ КНОПКУ НА ГЕЙМПАДЕ',
     W / 2, 168, pads.length ? '#7c7c7c' : '#3c3c3c', 1, 'center');
   if (G.best.depth > 0) text(tr('РЕКОРД: СЕКТОР') + ' ' + sectorName(G.best.depth) + '   ' + tr('ОЧКИ:') + ' ' + G.best.score, W / 2, 180, '#7c7c7c', 1, 'center');
-  text(Net.hosting() ? tr('КОМНАТА') + ' ' + Net.code + ': ' + tr('ГОСТЕЙ') + ' ' + Net.guestCount() : '4 БИОМА  •  8 БОССОВ  •  ДО 6 ИГРОКОВ, ОНЛАЙН-КООП', W / 2, 194, '#3c78a8', 1, 'center');
+  text(Net.hosting() ? tr('КОМНАТА') + ' ' + Net.code + ': ' + tr('ГОСТЕЙ') + ' ' + Net.guestCount() : '4 БИОМА  •  12 БОССОВ  •  ДО 6 ИГРОКОВ, ОНЛАЙН-КООП', W / 2, 194, '#3c78a8', 1, 'center');
   if (!Sound.ac || Sound.ac.state !== 'running') text(Touch.on ? 'ДЛЯ ЗВУКА КОСНИТЕСЬ ЭКРАНА' : 'ДЛЯ ЗВУКА НАЖМИТЕ КЛАВИШУ ИЛИ КЛИКНИТЕ', W / 2, 4, '#545454', 1, 'center');
   text('V' + BUILD, W - 3, 4, '#3c3c3c', 1, 'right');
   // парад танков внизу
@@ -1009,12 +1034,14 @@ function drawGameOver() {
 function drawVictory() {
   for (let i = 0; i < 40; i++) { const x = (i * 97 + G.time * 20 * (1 + i % 3)) % W, y = (i * 53 + G.time * 30) % H; rect(ctx, x, y, 2, 2, ['#fcd820', '#f83800', '#3cbcfc', '#58d854'][i % 4]); }
   text('ПОБЕДА!', W / 2, 26, '#fcd820', 4, 'center', '#7c4000');
-  text((G.boss && G.boss.deadText) || 'ЦИТАДЕЛЬ ОМЕГА УНИЧТОЖЕНА', W / 2, 70, '#fcfcfc', 1, 'center');
-  text(tr('ЦИКЛ') + ' ' + (sectorInfo(G.depth).loop + 1) + ' ' + tr('ПРОЙДЕН'), W / 2, 82, '#7c7c7c', 1, 'center');
+  text((G.boss && G.boss.deadText) || 'ВСЕ 18 БОССОВ ПОВЕРЖЕНЫ', W / 2, 70, '#fcfcfc', 1, 'center');
+  text('12 БОССОВ И 6 ДУЭТОВ ПРОЙДЕНЫ', W / 2, 82, '#7c7c7c', 1, 'center');
   drawMedals(94);
   drawStats(108);
   if (G.overT > 1.5) {
-    text('ОГОНЬ - НОВЫЙ ЦИКЛ (ВРАГИ СИЛЬНЕЕ)', W / 2, 206, blink(2) ? '#fcfcfc' : '#bcbcbc', 1, 'center');
+    text('ВНИМАНИЕ: ДАЛЬШЕ БУДЕТ ОЧЕНЬ СЛОЖНО!', W / 2, 184, blink(3) ? '#f83800' : '#a00000', 1, 'center');
+    text('ВРАГИ УСИЛЕНЫ И КРЕПЧАЮТ С КАЖДЫМ СЕКТОРОМ', W / 2, 194, '#bcbcbc', 1, 'center');
+    text('ОГОНЬ - БЕСКОНЕЧНЫЙ РЕЖИМ', W / 2, 208, blink(2) ? '#fcfcfc' : '#bcbcbc', 1, 'center');
     text('ESC - В МЕНЮ', W / 2, 220, '#7c7c7c', 1, 'center');
   }
 }

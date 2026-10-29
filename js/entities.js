@@ -71,7 +71,7 @@ function explode(x, y, r, o = {}) {
     if (P.perks.napalm && r >= 8) fireArea(x, y, r * 1.1, 3.5, P);
     if (P.perks.deton) detonateNear(x, y, 30, P);
   }
-  G.shake = Math.max(G.shake, Math.min(5, r / 5));
+  if (!P) G.shake = Math.max(G.shake, Math.min(5, r / 5)); // свои фугасы и мины экран не трясут
   if (!o.silent) Sound.play(r >= 14 ? 'boom' : 'hit');
 }
 
@@ -131,6 +131,7 @@ class Bullet {
     this.fx = o.fx || null; this.col = o.col || null; this.charged = !!o.charged; this.shard = !!o.shard;
     this.drill = o.drill || 0; this.target = o.target || null; this.accel = o.accel || 0; this.maxsp = o.maxsp || 0;
     this.ion = !!o.ion; this.ionD = 0; // «Ионная пушка»: молнии по пути
+    this.fly = !!o.fly; // летит над стенами (дроны Улья)
     if (this.counts && owner) owner.out++;
   }
   // рикошет игрока с «Шаровой молнией»
@@ -142,9 +143,20 @@ class Bullet {
   }
   release() { if (this.counts && this.owner) this.owner.out = Math.max(0, this.owner.out - 1); this.counts = false; }
   impact() { G.effects.push(new Boom(this.x, this.y, this.size > 5 ? 7 : 4, { quiet: true })); }
+  // снаряд игрока, отбитый щитом врага, летит обратно в стрелка как обычная вражеская пуля
+  reflectFrom(e) {
+    const t = this.owner instanceof Player && !this.owner.dead ? this.owner : G.nearestPlayer(this.x, this.y);
+    this.release();
+    const sp = Math.max(130, Math.hypot(this.vx, this.vy)), a = t ? angleTo(this.x, this.y, t.cx, t.cy) : Math.atan2(-this.vy, -this.vx);
+    Object.assign(this, { team: 'enemy', owner: e, dmg: 1, explosive: 0, fx: null, col: null, pierce: 0, bounce: 0, drill: 0, homing: 0,
+      charged: false, ion: false, power: false, hits: null, size: 4, life: 3, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
+  }
   update(dt) {
     this.age += dt; this.life -= dt;
-    if (this.life <= 0) { if (this.explosive) explode(this.x, this.y, this.explosive, { hurtPlayers: this.team === 'enemy', silent: true }); return this.kill(); }
+    if (this.life <= 0) {
+      if (this.explosive) explode(this.x, this.y, this.explosive, { hurtPlayers: this.team === 'enemy', hurtEnemies: this.team === 'player', hurtBoss: this.team === 'player', by: this.owner, silent: true });
+      return this.kill();
+    }
     if (this.homing) {
       let tx = null, ty = 0;
       if (this.team === 'enemy') { const t = G.nearestPlayer(this.x, this.y); if (t) { tx = t.cx; ty = t.cy; } }
@@ -185,7 +197,7 @@ class Bullet {
         this.impact(); this.kill(); return;
       }
       if (this.hitEntities()) return;
-      if (this.hitMap(ox, oy)) return;
+      if (!this.fly && this.hitMap(ox, oy)) return;
     }
     if (this.ion && (this.ionD += Math.hypot(this.vx, this.vy) * dt) >= 18) {
       this.ionD = 0;
@@ -243,6 +255,7 @@ class Bullet {
         const part = boss.hitTest(this.x, this.y, h);
         if (part && !(this.hits && this.hits.has(part))) {
           const r = bulletHitsBoss(this, part);
+          if (r === 'bounce') { Sound.play('steel'); this.reflectFrom(null); return false; } // энергощит Магнетрона отбивает снаряд в стрелка
           if (r === 'reflect') {
             Sound.play('steel');
             if (G.effects.length < 200) G.effects.push(new RingFx(this.x, this.y, 1, 4, '#fcfcfc', 0.15));
@@ -259,6 +272,7 @@ class Bullet {
           if (e.shieldBlocks(this)) {
             Sound.play('steel');
             if (G.effects.length < 200) G.effects.push(new RingFx(this.x, this.y, 1, 5, '#e0ecf8', 0.15));
+            if (e.elite) { this.reflectFrom(e); return false; } // усиленный щитоносец отбивает снаряд обратно в стрелка
             this.impact(); this.kill(); return true;
           }
           bulletHitsEnemy(this, e);
@@ -350,6 +364,10 @@ class Bullet {
         break;
       }
       case 'big': disc(g, x, y, 4, this.team === 'player' ? '#3cbcfc' : '#f87800'); disc(g, x, y, 3, '#fce0a8'); rect(g, x - 1, y - 1, 2, 2, '#ffffff'); break;
+      case 'drone': { // дрон-камикадзе Улья: оса, летит головой вперёд и подрагивает
+        if (BossArt.wasp) drawArt(g, 'wasp', x, y + (Math.floor(this.age * 20) % 2), Math.atan2(this.vy, this.vx));
+        break;
+      }
       case 'rocket': case 'missile': {
         const sp = Math.hypot(this.vx, this.vy) || 1, ux = this.vx / sp, uy = this.vy / sp;
         const len = this.kind === 'missile' ? 7 : 5;
@@ -536,14 +554,16 @@ class Player extends Tank {
     const charged = !!this.perks.wait && G.time - this.lastShot >= 1.5;
     this.lastShot = G.time;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
-    const angs = !s.spread ? [0] : s.pellets >= 7 ? [0, -0.06, 0.06, -0.12, 0.12, -0.18, 0.18] // дробь кучная
-      : s.pellets >= 5 ? [0, -0.07, 0.07, -0.14, 0.14] : [0, -0.08, 0.08];
+    // широкий веер; боковые дробины бьют вполсилы и гаснут на ~90 px — дробовик силён вблизи и по толпе, а не по одной цели
+    const angs = !s.spread ? [0] : s.pellets >= 7 ? [0, -0.12, 0.12, -0.24, 0.24, -0.36, 0.36]
+      : s.pellets >= 5 ? [0, -0.15, 0.15, -0.3, 0.3] : [0, -0.24, 0.24];
     const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7, adren = this.adren > 0 ? 2 : 1; // «Адреналин»
     for (const a of angs) {
-      const ch = charged && a === 0;
+      const ch = charged && a === 0, side = a !== 0;
       G.bullets.push(new Bullet(bx, by, Math.cos(base + a) * s.bspeed, Math.sin(base + a) * s.bspeed, 'player', this, {
-        dmg: s.dmg * (ch ? 3 : 1) * adren, power: s.power, pierce: s.pierce + (ch ? 1 : 0), bounce: s.bounce, explosive: s.explosive,
-        size: s.dmg > 1 || ch || adren > 1 ? 5 : 4, counts: a === 0, fx: s.fx, col: elemCol(s.fx), charged: ch, ion: !!this.perks.ion,
+        dmg: s.dmg * (ch ? 3 : 1) * adren * (side ? 0.5 : 1), power: s.power, pierce: s.pierce + (ch ? 1 : 0), bounce: s.bounce, explosive: s.explosive,
+        size: (s.dmg > 1 || ch || adren > 1) && !side ? 5 : 4, counts: !side, fx: s.fx, col: elemCol(s.fx), charged: ch, ion: !!this.perks.ion,
+        life: side ? 90 / s.bspeed : 0,
       }));
     }
     G.effects.push(new Boom(bx + DX[this.dir] * 2, by + DY[this.dir] * 2, charged ? 6 : 3, { dur: charged ? 0.15 : 0.08, quiet: true }));
@@ -726,6 +746,12 @@ class Enemy extends Tank {
     this.speed = T.speed * mods.speed; this.fireMul = mods.fire; this.hunt = mods.hunt;
     this.bspeed = T.bspeed * (1 + 0.1 * (mods.loop || 0));
     this.maxB = (type === 'power' && mods.depth >= 8) ? 2 : 1;
+    // бесконечный режим: у каждого типа своё усиление (см. ELITE_DESC)
+    this.elite = !!mods.elite;
+    if (this.elite) {
+      if (type === 'basic' || type === 'power') this.maxB = 2;
+      if (type === 'fast') { this.speed *= 1.25; this.fireMul *= 1.5; }
+    }
     this.think = rand(0.2, 0.8); this.blockedT = 0; this.bonus = false;
     this.artT = rand(1.5, 3); this.aim = 0; this.fuse = 0; this.flameT = 0; this.flameE = 0; this.mineT = rand(2, 4);
     this.cool = rand(0.3, 1.2);
@@ -820,8 +846,11 @@ class Enemy extends Tank {
     this.cool = this.cfg.reload / this.fireMul * (this.slow > 0 ? 1.8 : 1);
     const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
-    const angs = this.type === 'spread' ? [0, -0.28, 0.28] : [0];
-    for (const a of angs) G.bullets.push(new Bullet(bx, by, Math.cos(base + a) * this.bspeed, Math.sin(base + a) * this.bspeed, 'enemy', this, { counts: a === 0 }));
+    const E = this.elite, angs = this.type !== 'spread' ? [0] : E ? [0, -0.2, 0.2, -0.4, 0.4] : [0, -0.28, 0.28];
+    const o = { power: E && this.type === 'power', explosive: E && this.type === 'armor' ? 10 : 0, size: E && this.type === 'armor' ? 5 : 4 };
+    for (const a of angs) G.bullets.push(new Bullet(bx, by, Math.cos(base + a) * this.bspeed, Math.sin(base + a) * this.bspeed, 'enemy', this, { ...o, counts: a === 0 }));
+    // усиленный лёгкий: вторая пуля вдогонку
+    if (E && this.type === 'basic') later(0.12, () => { if (this.alive) G.bullets.push(new Bullet(this.cx + DX[this.dir] * 7, this.cy + DY[this.dir] * 7, DX[this.dir] * this.bspeed, DY[this.dir] * this.bspeed, 'enemy', this, {})); });
     Sound.play('eshoot');
   }
   // щит отражает снаряд, летящий в лоб и попавший в переднюю половину
@@ -835,20 +864,20 @@ class Enemy extends Tank {
       this.flameT -= dt; this.flameE -= dt;
       if (this.flameE <= 0) {
         this.flameE = 0.045;
-        const a = Math.atan2(DY[this.dir], DX[this.dir]) + rand(-0.22, 0.22);
+        const E = this.elite, a = Math.atan2(DY[this.dir], DX[this.dir]) + rand(-1, 1) * (E ? 0.32 : 0.22);
         G.bullets.push(new Bullet(this.cx + DX[this.dir] * 8, this.cy + DY[this.dir] * 8, Math.cos(a) * 130, Math.sin(a) * 130, 'enemy', this,
-          { kind: 'flame', size: 5, cancel: false, breaks: false, life: rand(0.38, 0.5) }));
+          { kind: 'flame', size: 5, cancel: false, breaks: false, life: E ? rand(0.6, 0.75) : rand(0.38, 0.5) }));
       }
       if (this.flameT <= 0) this.cool = 1.4 / this.fireMul;
       return true;
     }
     if (this.cool > 0) return false;
     for (const p of G.players) {
-      if (p.dead || dist(p.cx, p.cy, this.cx, this.cy) > 64) continue;
+      if (p.dead || dist(p.cx, p.cy, this.cx, this.cy) > (this.elite ? 96 : 64)) continue;
       const dx = p.cx - this.cx, dy = p.cy - this.cy;
       if (Math.abs(dx) < 10 || Math.abs(dy) < 10) {
         this.turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0));
-        this.flameT = 0.7; this.flameE = 0; Sound.play('dash');
+        this.flameT = this.elite ? 1.0 : 0.7; this.flameE = 0; Sound.play('dash');
         return true;
       }
     }
@@ -857,8 +886,8 @@ class Enemy extends Tank {
   updateMiner(dt) {
     this.mineT -= dt;
     if (this.mineT > 0) return;
-    this.mineT = rand(3.5, 5.5) / this.fireMul;
-    if (G.mines.filter(m => m instanceof EMine).length >= 8) return;
+    this.mineT = rand(3.5, 5.5) / this.fireMul / (this.elite ? 1.7 : 1);
+    if (G.mines.filter(m => m instanceof EMine).length >= (this.elite ? 12 : 8)) return;
     G.mines.push(new EMine(this.cx - DX[this.dir] * 11, this.cy - DY[this.dir] * 11));
     Sound.play('mine');
   }
@@ -867,6 +896,10 @@ class Enemy extends Tank {
       this.aim -= dt;
       if (this.aim <= 0) {
         G.mortars.push(new Mortar(this.cx, this.cy, this.aimX, this.aimY, 1.3, { r: 16 }));
+        if (this.elite) for (const k of [0, 1]) { // усиленный миномёт: залп из трёх мин
+          const a = rand(0, Math.PI * 2) + k * Math.PI, ax = clamp(this.aimX + Math.cos(a) * 26, 8, FW - 8), ay = clamp(this.aimY + Math.sin(a) * 26, 8, FH - 8);
+          G.mortars.push(new Mortar(this.cx, this.cy, ax, ay, 1.45 + k * 0.15, { r: 14 }));
+        }
         Sound.play('mortar');
         this.artT = rand(3.2, 4.5) / this.fireMul;
       }
@@ -890,7 +923,7 @@ class Enemy extends Tank {
     if (this.fuse > 0) {
       this.fuse -= dt;
       this.flash = Math.floor(this.fuse * 20) % 2 ? 0.05 : 0;
-      if (this.fuse <= 0) { this.alive = false; G.killedCount++; explode(this.cx, this.cy, 24, { hurtPlayers: true }); }
+      if (this.fuse <= 0) { this.alive = false; G.killedCount++; explode(this.cx, this.cy, this.elite ? 36 : 24, { hurtPlayers: true }); }
       return;
     }
     const t = G.nearestPlayer(this.cx, this.cy);
@@ -934,7 +967,8 @@ class Enemy extends Tank {
     }
     if (this.bonus || Math.random() < G.dropChance * luck)
       G.pickups.push(new Pickup(Math.round(this.x / 8) * 8, Math.round(this.y / 8) * 8, randomPickup()));
-    if (this.type === 'kamikaze') explode(this.cx, this.cy, 18, { hurtPlayers: true, silent: true });
+    if (this.type === 'kamikaze') explode(this.cx, this.cy, this.elite ? 27 : 18, { hurtPlayers: true, silent: true });
+    if (this.elite && this.type === 'miner' && G.mines.length < 16) G.mines.push(new EMine(this.cx, this.cy)); // мина-посмертка
     // мифические синергии на гибели врага
     if ((this.frozen > 0 || this.thaw === G.time) && by instanceof Player && by.perks.abszero) freezeBurst(this, by);
     const fb = this.burnBy;
@@ -948,6 +982,11 @@ class Enemy extends Tank {
     g.drawImage(TankGfx.get(this.shape, pal)[this.anim][this.dir], Math.round(this.x), Math.round(this.y));
     drawStatus(g, this);
     if (this.type === 'artillery' && this.aim > 0) rect(g, this.cx - 1, this.cy - 1, 2, 2, Math.floor(G.time * 20) % 2 ? '#f83800' : '#fcfcfc');
+    if (this.elite) { // корона усиленного врага
+      const x = Math.round(this.x), y = Math.round(this.y) - (this.maxHp > 1 && this.hp < this.maxHp ? 8 : 5);
+      rect(g, x + 5, y + 1, 6, 2, '#fcd820'); rect(g, x + 5, y, 1, 1, '#fcd820'); rect(g, x + 7, y - 1, 2, 1, '#fcd820'); rect(g, x + 10, y, 1, 1, '#fcd820');
+      rect(g, x + 7, y + 1, 2, 1, '#f83800');
+    }
     if (this.maxHp > 1 && this.hp < this.maxHp) {
       rect(g, Math.round(this.x) + 2, Math.round(this.y) - 3, 12, 2, '#200000');
       rect(g, Math.round(this.x) + 2, Math.round(this.y) - 3, Math.round(12 * this.hp / this.maxHp), 2, '#f83800');

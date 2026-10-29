@@ -250,8 +250,10 @@ function generateLevel(biome, opts = {}) {
   }
 }
 
-// арены боссов: рельеф от биома, расчистка и укрытия — под конкретного босса
-function generateBossArena(biome, id) {
+// арены боссов: рельеф от биома, расчистка и укрытия — под конкретного босса (или под обоих в дуэте)
+function generateBossArena(biome, ids) {
+  ids = [].concat(ids);
+  const has = (...k) => k.some(i => ids.includes(i));
   let opts;
   if (biome === 0) opts = { sym: true, minS: 4, maxS: 6, steelMul: 0.3, weights: { pond: 0.3, box: 0.4, ice: 0.2 } };
   else if (biome === 1) opts = { sym: true, minS: 7, maxS: 9, steelMul: 0.4, weights: { box: 1.5, pond: 0.4 } };
@@ -260,15 +262,16 @@ function generateBossArena(biome, id) {
   for (let attempt = 0; attempt < 60; attempt++) {
     const { B, half } = genBlocks(biome, opts);
     for (let x = 7; x <= 16; x++) for (let y = 13; y <= 14; y++) clearBlock(B, half, x, y);
-    if (id === 'goliath') for (let x = 8; x <= 15; x++) for (let y = 0; y <= 4; y++) clearBlock(B, half, x, y);
-    if (id === 'twins') for (let x = 6; x <= 17; x++) for (let y = 0; y <= 3; y++) clearBlock(B, half, x, y);
-    if (id === 'worm') for (let x = 9; x <= 14; x++) for (let y = 5; y <= 9; y++) clearBlock(B, half, x, y);
-    if (id === 'cryo' || id === 'scorpion' || id === 'phantom') for (let x = 9; x <= 14; x++) for (let y = 1; y <= 5; y++) clearBlock(B, half, x, y);
-    if (id === 'omega') {
+    if (has('goliath')) for (let x = 8; x <= 15; x++) for (let y = 0; y <= 4; y++) clearBlock(B, half, x, y);
+    if (has('twins')) for (let x = 6; x <= 17; x++) for (let y = 0; y <= 3; y++) clearBlock(B, half, x, y);
+    if (has('worm')) for (let x = 9; x <= 14; x++) for (let y = 5; y <= 9; y++) clearBlock(B, half, x, y);
+    if (has('cryo', 'scorpion', 'phantom', 'inferno', 'magnet')) for (let x = 9; x <= 14; x++) for (let y = 1; y <= 5; y++) clearBlock(B, half, x, y);
+    if (has('cryo') && has('inferno')) for (let x = 2; x <= 21; x++) for (let y = 1; y <= 5; y++) clearBlock(B, half, x, y); // оба выходят сверху по краям
+    if (has('omega')) {
       for (let x = 0; x < BCOLS; x++) for (let y = 0; y <= 5; y++) clearBlock(B, half, x, y);
       for (const x of [3, 4, 19, 20]) B[8 * BCOLS + x] = T_STEEL;
     }
-    if (id === 'goliath' || id === 'twins' || id === 'phantom') for (const [x, y] of [[5, 5], [18, 5], [5, 10], [18, 10]]) B[y * BCOLS + x] = T_STEEL;
+    if (has('goliath', 'twins', 'phantom', 'magnet')) for (const [x, y] of [[5, 5], [18, 5], [5, 10], [18, 10]]) B[y * BCOLS + x] = T_STEEL;
     const d = blockBFS(B, PLAYER_SPAWNS[0][0], PLAYER_SPAWNS[0][1]);
     if (d[PLAYER_SPAWNS[1][1] * BCOLS + PLAYER_SPAWNS[1][0]] < 0 || d[6 * BCOLS + 12] < 0) continue;
     for (let i = 0; i < B.length; i++) if (d[i] < 0 && B[i] !== T_STEEL && B[i] !== T_WATER) B[i] = T_BRICK;

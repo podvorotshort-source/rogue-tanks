@@ -113,7 +113,7 @@ function bulletHitsEnemy(b, e) {
 function bulletHitsBoss(b, part) {
   const p = b.owner instanceof Player ? b.owner : null, fx = b.fx, B = G.boss;
   const r = bossHit(part, b.dmg, b.owner);
-  if (r === 'reflect' || !fx) return r;
+  if (r === 'reflect' || r === 'bounce' || !fx) return r;
   if (fx.inc) { B.burn = 3; B.burnPart = part; B.burnBy = p; }
   if (fx.mark) { B.mark = 4; const a = bossAim(); carpetStrike(a.x, a.y, p); }
   if (fx.tesla) chainLightning(b.x, b.y, p && p.perks.thunder ? 4 : 2, 70, 1, p);

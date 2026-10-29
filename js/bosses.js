@@ -1,13 +1,24 @@
 'use strict';
 // ============================================================
 //  BOSSES: Голиаф, Стрекоза, Сколопендра, Цитадель Омега,
-//          Близнецы, Криомех, Скорпион, Фантом
+//          Близнецы, Криомех, Скорпион, Фантом,
+//          Инферно, Бур, Магнетрон, Улей; дуэты боссов
 // ============================================================
 
 function normA(a) { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; }
 function ellipse(g, cx, cy, rx, ry, col) {
   g.fillStyle = col; cx = Math.round(cx); cy = Math.round(cy);
   for (let dy = -ry; dy <= ry; dy++) { const dx = Math.round(rx * Math.sqrt(1 - (dy * dy) / (ry * ry))); g.fillRect(cx - dx, cy + dy, dx * 2 + 1, 1); }
+}
+// спрайт босса центром в (x, y), повёрнутый на a; (ox, oy) — сдвиг картинки относительно центра до поворота
+// кадр прокрутки гусениц (у спрайта есть имя, имя_1, имя_2)
+const trk = (k, v) => { const f = Math.floor(v) % 3; return f ? k + '_' + f : k; };
+function drawArt(g, k, x, y, a = 0, fl = false, ox = 0, oy = 0) {
+  const A = BossArt[k]; if (!A) return;
+  const c = fl ? A.w : A.n;
+  g.save(); g.translate(Math.round(x), Math.round(y)); if (a) g.rotate(a);
+  g.drawImage(c, Math.round(ox - c.width / 2), Math.round(oy - c.height / 2));
+  g.restore();
 }
 // снаряды боссов не гасят выстрелы игрока (сбить можно только ракеты с hp)
 function enemyShot(x, y, a, sp, o = {}) { G.bullets.push(new Bullet(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 'enemy', null, { cancel: false, ...o })); }
@@ -19,6 +30,12 @@ class Boss {
   }
   blocks() { return false; }
   hitTest() { return null; }
+  // сдвиг стартовой позиции (в дуэте боссы не должны появляться друг на друге)
+  shift(dx, dy) {
+    this.x += dx; this.y += dy;
+    if (this.tx !== undefined) { this.tx += dx; this.ty += dy; }
+    if (this.tgx !== undefined) { this.tgx += dx; this.tgy += dy; }
+  }
   aim() { return { x: this.x, y: this.y }; } // куда целятся самонаводящиеся системы игроков
   damage(dmg) {
     if (!this.active || this.dying) return 'reflect';
@@ -45,7 +62,7 @@ class Boss {
       G.shake = 10; G.flashT = 0.35;
       Input.rumble(0, 1, 1, 700); Input.rumble(1, 1, 1, 700);
       this.alive = false;
-      G.onBossKilled(this);
+      if (this.parent) this.parent.subDown(this); else G.onBossKilled(this);
     }
   }
   pushPlayers(nx, ny, w, h, dx, dy, dmg) {
@@ -81,7 +98,7 @@ class Goliath extends Boss {
   bounds() { return { x: this.x, y: this.y, w: 48, h: 48 }; }
   blocks(x, y, w, h) { return this.alive && !this.dying && overlap(x, y, w, h, this.x + 1, this.y + 1, 46, 46); }
   hitTest(x, y, h) { return overlap(x - h, y - h, h * 2, h * 2, this.x + 2, this.y + 2, 44, 44) ? 'body' : null; }
-  tread(dt) { this.animT += dt; if (this.animT > 0.07) { this.animT = 0; this.anim ^= 1; } }
+  tread(dt) { this.animT += dt; if (this.animT > 0.07) { this.animT = 0; this.anim = (this.anim + 1) % 3; } }
   chooseDir(exact) {
     const t = G.nearestPlayer(this.cx, this.cy);
     if (!t || (!exact && Math.random() < 0.25)) { this.dir = randi(0, 3); return; }
@@ -171,8 +188,8 @@ class Goliath extends Boss {
     Sound.play('eshoot');
   }
   drawGround(g) {
-    const S = BossGfx.goliath();
-    g.drawImage((this.flash > 0 ? S.w : S.n)[this.anim][this.dir], Math.round(this.x), Math.round(this.y));
+    const A = BossArt[trk('goliath', this.anim)], T = BossArt.goliathTur, fl = this.flash > 0;
+    for (const S of [A, T]) if (S) { const c = (fl ? S.rw : S.r)[this.dir]; g.drawImage(c, Math.round(this.x + 24 - c.width / 2), Math.round(this.y + 24 - c.height / 2)); } // башня в гнезде по центру
     if (this.state === 'rev' && Math.floor(this.t * 16) % 2) {
       const fx = this.cx + DX[this.dir] * 20, fy = this.cy + DY[this.dir] * 20;
       rect(g, Math.round(fx) - 2, Math.round(fy) - 2, 4, 4, '#f83800');
@@ -270,18 +287,12 @@ class Heli extends Boss {
     ellipse(g, this.x + 10, this.y + 22, 15, 6, 'rgba(0,0,0,0.45)');
   }
   drawAir(g) {
-    const S = BossGfx.heli();
     const x = Math.round(this.x), y = Math.round(this.y);
-    g.drawImage(this.flash > 0 ? S.w : S.n, x - 20, y - 24);
-    const hx = x, hy = y + 2;
-    circle(g, hx, hy, 28, 'rgba(200,210,240,0.25)', 2);
-    for (const off of [0, Math.PI / 2]) {
-      const a = this.rot + off, cx = Math.cos(a) * 28, cy = Math.sin(a) * 28;
-      pline(g, hx - cx, hy - cy, hx + cx, hy + cy, 'rgba(210,220,250,0.75)', 2);
-    }
-    rect(g, hx - 2, hy - 2, 4, 4, '#202838');
-    const ta = this.rot * 1.7;
-    pline(g, x - Math.cos(ta) * 6, y - 22, x + Math.cos(ta) * 6, y - 22, '#c0c8e0', 1);
+    drawArt(g, 'heli', x, y, 0, this.flash > 0, 0, 2);
+    // несущий винт: размытый след и сами лопасти
+    g.globalAlpha = 0.3; drawArt(g, 'rotor', x, y - 1, this.rot - 0.35);
+    g.globalAlpha = 0.9; drawArt(g, 'rotor', x, y - 1, this.rot);
+    g.globalAlpha = 1;
     if (this.phase === 2 && Math.floor(this.t * 6) % 2) { rect(g, x - 18, y - 2, 2, 2, '#f83800'); rect(g, x + 16, y - 2, 2, 2, '#f83800'); }
   }
 }
@@ -430,7 +441,6 @@ class Worm extends Boss {
     return 'ok';
   }
   drawGround(g) {
-    const S = BossGfx.worm(), P = BOSS_PALS.worm;
     if (this.under) {
       const j = Math.floor(this.t * 20) % 2;
       for (let i = this.segPos.length - 1; i >= 0; i--) { const p = this.segPos[i]; ellipse(g, p.x, p.y + j, 6, 3, '#3c2810'); rect(g, Math.round(p.x) - 2, Math.round(p.y) - 2, 3, 1, '#8c6c3c'); }
@@ -438,28 +448,24 @@ class Worm extends Boss {
       if (this.active && this.underT < 0.7) circle(g, this.x, this.y, 22, Math.floor(this.t * 16) % 2 ? '#f83800' : '#fcd820', 3);
       return;
     }
-    for (let i = this.segPos.length - 1; i >= 0; i--) {
+    const last = this.segPos.length - 1;
+    for (let i = last; i >= 0; i--) {
       const p = this.segPos[i], s = this.segs[i];
-      const nx = -Math.sin(p.a), ny = Math.cos(p.a), fx = Math.cos(p.a), fy = Math.sin(p.a);
-      for (const side of [-1, 1]) {
-        const ph = Math.sin(this.t * 14 + i * 1.3 + (side > 0 ? 0 : Math.PI)) * 3;
-        pline(g, p.x + nx * side * 5, p.y + ny * side * 5, p.x + nx * side * 11 + fx * ph, p.y + ny * side * 11 + fy * ph, P.d, 2);
-        rect(g, Math.round(p.x + nx * side * 11 + fx * ph), Math.round(p.y + ny * side * 11 + fy * ph), 1, 1, P.l);
-      }
-      g.drawImage(s.flash > 0 ? S.segW : S.seg, Math.round(p.x - 8), Math.round(p.y - 8));
+      const wob = Math.sin(this.t * 14 + i * 1.3) * 0.08; // сегменты чуть покачиваются на ходу
+      drawArt(g, i === last ? 'wormTail' : 'wormSeg', p.x, p.y, p.a + wob, s.flash > 0, i === last ? -2 : 0);
     }
-    const f = Math.floor(this.t * 5) % 2;
-    g.save();
-    g.translate(Math.round(this.x), Math.round(this.y));
-    g.rotate(this.a);
-    g.drawImage((this.flash > 0 ? S.headW : S.head)[f], -11, -12);
-    g.restore();
+    drawArt(g, 'wormHead', this.x, this.y, this.a, this.flash > 0, 2);
   }
 }
 
 // ------------------------------------------------------------
 //  4. ЦИТАДЕЛЬ ОМЕГА — крепость с турелями, щитом ядра и лазером
 // ------------------------------------------------------------
+// турели стоят в гнёздах на картинке (ox, oy — левый верхний угол зоны 16x16)
+const OMEGA_TURRETS = [
+  { ox: 18, oy: 30, kind: 'cannon' }, { ox: 32, oy: -1, kind: 'mg' },
+  { ox: 79, oy: -1, kind: 'mg' }, { ox: 94, oy: 30, kind: 'cannon' },
+];
 class Omega extends Boss {
   constructor(scale) {
     const th = Math.round(16 * scale), ch = Math.round(110 * scale);
@@ -472,7 +478,7 @@ class Omega extends Boss {
     this.ringT = 3; this.ring2 = 0; this.ringOff = 0; this.spiralT = 5; this.spiral = null; this.kamiT = 5;
   }
   get coreX() { return this.x + 64; }
-  get coreY() { return this.y + 22; }
+  get coreY() { return this.y + 13; }
   aim() { const t = this.turrets.find(q => !q.dead); return t ? { x: this.x + t.ox + 8, y: this.y + t.oy + 8 } : { x: this.coreX, y: this.coreY }; }
   bounds() { return { x: this.x, y: this.y, w: 128, h: 56 }; }
   blocks(x, y, w, h) { return this.alive && !this.dying && overlap(x, y, w, h, this.x, this.y, 128, 56); }
@@ -518,7 +524,7 @@ class Omega extends Boss {
     G.effects.push(new RingFx(this.coreX, this.coreY, 6, 40, '#3cbcfc', 0.6));
     Sound.play('roar');
   }
-  treads(dt) { this.animT += dt; if (this.animT > 0.08) { this.animT = 0; this.anim ^= 1; } }
+  treads(dt) { this.animT += dt; if (this.animT > 0.08) { this.animT = 0; this.anim = (this.anim + 1) % 3; } }
   update(dt) {
     this.t += dt; this.flash -= dt; this.core.flash -= dt;
     for (const t of this.turrets) t.flash -= dt;
@@ -594,16 +600,14 @@ class Omega extends Boss {
     }
   }
   drawGround(g) {
-    const x = Math.round(this.x), y = Math.round(this.y), P = BOSS_PALS.omega;
-    g.drawImage(BossGfx.omega()[this.anim], x, y);
-    if (this.flash > 0) { g.globalAlpha = 0.5; rect(g, x, y, 128, 56, '#fcfcfc'); g.globalAlpha = 1; }
+    const x = Math.round(this.x), y = Math.round(this.y);
+    const base = trk('omega', this.anim);
+    drawArt(g, base, x + 64, y + 28);
+    if (this.flash > 0) { g.globalAlpha = 0.5; drawArt(g, base, x + 64, y + 28, 0, true); g.globalAlpha = 1; }
     // ядро
-    const cx = x + 64, cy = y + 22;
-    const cc = ['#801000', '#d82800', '#f87800', '#fcd820'];
-    const pulse = Math.floor(this.t * 8) % 4;
-    disc(g, cx, cy, 10, this.core.flash > 0 ? '#fcfcfc' : cc[(pulse + 1) % 4]);
-    disc(g, cx, cy, 6, this.core.flash > 0 ? '#fcfcfc' : cc[(pulse + 2) % 4]);
-    disc(g, cx, cy, 3, '#fcfcfc');
+    const cx = x + 64, cy = y + 13;
+    drawArt(g, 'omCore', cx, cy, 0, this.core.flash > 0);
+    if (this.phase === 2 && Math.floor(this.t * 8) % 2) disc(g, cx, cy - 2, 3, '#fcfcfc'); // щит снят — ядро мигает
     if (this.phase === 1) {
       circle(g, cx, cy, 13 + Math.sin(this.t * 6), Math.floor(this.t * 10) % 2 ? '#3cbcfc' : '#a4e4fc', 2);
       circle(g, cx, cy, 15, '#3c78f8', 3);
@@ -612,12 +616,7 @@ class Omega extends Boss {
     for (const t of this.turrets) {
       const tx = x + t.ox + 8, ty = y + t.oy + 8;
       if (t.dead) { disc(g, tx, ty, 6, '#141414'); rect(g, tx - 3, ty - 1, 2, 2, '#3c3c3c'); rect(g, tx + 2, ty + 1, 2, 1, '#f83800'); continue; }
-      const fl = t.flash > 0;
-      disc(g, tx, ty, 7, fl ? '#fcfcfc' : P.k); disc(g, tx, ty, 6, fl ? '#fcfcfc' : P.l); disc(g, tx - 1, ty - 1, 3, fl ? '#fcfcfc' : P.w);
-      const len = t.kind === 'cannon' ? 11 : 10;
-      pline(g, tx, ty, tx + Math.cos(t.a) * len, ty + Math.sin(t.a) * len, fl ? '#fcfcfc' : P.k, t.kind === 'cannon' ? 4 : 3);
-      pline(g, tx, ty, tx + Math.cos(t.a) * len, ty + Math.sin(t.a) * len, fl ? '#fcfcfc' : P.m, t.kind === 'cannon' ? 2 : 1);
-      rect(g, tx - 1, ty - 1, 2, 2, P.r);
+      drawArt(g, t.kind === 'cannon' ? 'omCannon' : 'omMg', tx, ty, t.a, t.flash > 0);
       const hp = t.hp / t.max;
       rect(g, x + t.ox, y + t.oy - 3, 16, 2, '#200000'); rect(g, x + t.ox, y + t.oy - 3, Math.round(16 * hp), 2, '#f83800');
     }
@@ -698,7 +697,7 @@ class Twins extends Boss {
     }
     return moved;
   }
-  tread(t, dt) { t.animT += dt; if (t.animT > 0.08) { t.animT = 0; t.anim ^= 1; } }
+  tread(t, dt) { t.animT += dt; if (t.animT > 0.08) { t.animT = 0; t.anim = (t.anim + 1) % 3; } }
   update(dt) {
     this.t += dt; this.flash -= dt;
     for (const t of this.twins) t.flash -= dt;
@@ -767,11 +766,11 @@ class Twins extends Boss {
     }
   }
   drawGround(g) {
-    const S = BossGfx.twins();
     for (const t of this.twins) {
       const x = Math.round(t.x), y = Math.round(t.y);
       if (t.dead) { rect(g, x + 3, y + 3, 26, 26, '#1c1c1c'); rect(g, x + 8, y + 8, 16, 16, '#2c2c2c'); rect(g, x + 12, y + 2, 4, 10, '#1c1c1c'); continue; }
-      g.drawImage((t.flash > 0 ? S[t.i].w : S[t.i].n)[t.anim][t.dir], x, y);
+      const A = BossArt[trk(t.i ? 'twinB' : 'twinA', t.anim)], T = BossArt[t.i ? 'twinTurB' : 'twinTurA'], fl = t.flash > 0;
+      for (const S of [A, T]) if (S) { const c = (fl ? S.rw : S.r)[t.dir]; g.drawImage(c, x + 16 - c.width / 2, y + 16 - c.height / 2); }
       if (this.pincer > 0 && Math.floor(this.t * 16) % 2) rect(g, x + 14, y + 14, 4, 4, '#fcfcfc');
       if (this.active) { rect(g, x + 4, y - 4, 24, 2, '#200000'); rect(g, x + 4, y - 4, Math.round(24 * t.hp / t.max), 2, t.i ? '#3cbcfc' : '#f83800'); }
     }
@@ -919,29 +918,14 @@ class Cryo extends Boss {
     }
   }
   drawGround(g) {
-    const P = BOSS_PALS.cryo, S = BossGfx.cryo(), fl = this.flash > 0;
-    for (let i = 0; i < 4; i++) {
-      const a = Math.PI / 4 + i * Math.PI / 2, ph = Math.sin(this.walk + (i % 2) * Math.PI) * 4;
-      const ca = Math.cos(a), sa = Math.sin(a);
-      const hx = this.x + ca * 10, hy = this.y + sa * 10;
-      const kx = this.x + ca * 22 - sa * ph, ky = this.y + sa * 22 + ca * ph;
-      const fx = this.x + ca * 29 - sa * ph * 1.5, fy = this.y + sa * 29 + ca * ph * 1.5;
-      pline(g, hx, hy, kx, ky, P.k, 5); pline(g, hx, hy, kx, ky, fl ? '#fcfcfc' : P.m, 3);
-      pline(g, kx, ky, fx, fy, P.k, 4); pline(g, kx, ky, fx, fy, fl ? '#fcfcfc' : P.l, 2);
-      disc(g, kx, ky, 3, P.k); disc(g, kx, ky, 2, P.l); disc(g, fx, fy, 3, P.d);
-    }
-    g.drawImage((fl ? S.w : S.n)[Math.floor(this.t * 4) % 2], Math.round(this.x) - 20, Math.round(this.y) - 20);
-    const gx = this.x + Math.cos(this.gunA) * 17, gy = this.y + Math.sin(this.gunA) * 17;
-    pline(g, this.x, this.y, gx, gy, P.k, 5); pline(g, this.x, this.y, gx, gy, fl ? '#fcfcfc' : P.l, 3);
-    rect(g, Math.round(gx) - 1, Math.round(gy) - 1, 2, 2, P.w);
+    const fl = this.flash > 0;
+    drawArt(g, trk('cryo', this.walk), this.x, this.y, 0, fl);
+    drawArt(g, 'cryoTur', this.x, this.y, this.gunA, fl);
     if (this.phase === 2) circle(g, this.x, this.y, 21, Math.floor(this.t * 8) % 2 ? '#a4e4fc' : '#3cbcfc', 3);
   }
   drawAir(g) {
     for (const c of this.crystals) {
-      const x = Math.round(c.x), y = Math.round(c.y), fl = c.flash > 0;
-      rect(g, x - 2, y - 5, 5, 11, '#003c8c'); rect(g, x - 4, y - 2, 9, 5, '#003c8c');
-      rect(g, x - 1, y - 4, 3, 9, fl ? '#fcfcfc' : '#3cbcfc'); rect(g, x - 3, y - 1, 7, 3, fl ? '#fcfcfc' : '#3cbcfc');
-      rect(g, x, y - 3, 1, 4, '#f0fcff');
+      drawArt(g, 'crystal', c.x, c.y, 0, c.flash > 0);
     }
   }
 }
@@ -965,8 +949,9 @@ class Scorpion extends Boss {
   world(lx, ly) { const c = Math.cos(this.a), s = Math.sin(this.a); return { x: this.x + lx * c - ly * s, y: this.y + lx * s + ly * c }; }
   tailPts() {
     const pts = [];
-    let px = -14, py = 0, ang = Math.PI + Math.sin(this.t * 2) * 0.25;
-    for (let i = 0; i < 6; i++) { px += Math.cos(ang) * 6; py += Math.sin(ang) * 6; ang += 0.38; pts.push(this.world(px, py)); }
+    // по дуге нарисованного хвоста: от кормы к жалу над правым боком
+    const sw = Math.sin(this.t * 2) * 1.5;
+    for (let i = 1; i <= 6; i++) { const k = i / 6, a = Math.PI * (1 - k * 0.75); pts.push(this.world(-8 + Math.cos(a) * 14 + sw * k, -4 - Math.sin(a) * 12 * k - k * 4)); }
     return pts;
   }
   aim() { return this.world(-4, 0); }
@@ -1103,7 +1088,7 @@ class Scorpion extends Boss {
     if (this.phase === 2) { this.minionT -= dt; if (this.minionT <= 0) { this.minionT = 14; G.spawnMinions(2, 'fast', this.x, this.y); } }
   }
   drawGround(g) {
-    const P = BOSS_PALS.scorp, S = BossGfx.scorp(), fl = this.flash > 0;
+    const P = BOSS_PALS.scorp, fl = this.flash > 0;
     for (const q of this.pools) {
       if (q.t < 1 && Math.floor(q.t * 10) % 2) continue;
       const k = Math.min(1, (q.max - q.t) * 4);
@@ -1111,19 +1096,11 @@ class Scorpion extends Boss {
       ellipse(g, q.x, q.y, Math.max(1, Math.round((q.r - 3) * k)), Math.max(1, Math.round((q.r - 3) * 0.7 * k)), Math.floor(this.t * 4 + q.x) % 2 ? '#8cd800' : '#6cb800');
       if (Math.floor(this.t * 6 + q.y) % 3 === 0) rect(g, Math.round(q.x + Math.sin(q.t * 7) * 6), Math.round(q.y + Math.cos(q.t * 5) * 3), 2, 2, '#e8fcb0');
     }
-    // ноги
-    for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
-      const lx = -9 + i * 6, ph = Math.sin(this.walk + i * 1.6 + (s > 0 ? 0 : Math.PI)) * 3;
-      const h = this.world(lx, s * 8), k = this.world(lx + 2 + ph, s * 17), f = this.world(lx - 2 + ph, s * 23);
-      pline(g, h.x, h.y, k.x, k.y, P.k, 3); pline(g, k.x, k.y, f.x, f.y, P.k, 3);
-      pline(g, h.x, h.y, k.x, k.y, fl ? '#fcfcfc' : P.m, 1); pline(g, k.x, k.y, f.x, f.y, fl ? '#fcfcfc' : P.d, 1);
-      rect(g, Math.round(k.x), Math.round(k.y), 1, 1, P.l);
-    }
     // тело (перед рывком мигает)
     const wind = this.lunge && !this.lunge.go && Math.floor(this.t * 16) % 2;
+    drawArt(g, 'scorp', this.x, this.y, this.a, fl || wind, 2);
     g.save();
     g.translate(Math.round(this.x), Math.round(this.y)); g.rotate(this.a);
-    g.drawImage((fl || wind ? S.w : S.n)[this.clawT > 0 || (this.lunge && this.lunge.go) ? 1 : 0], -26, -20);
     if (this.mouthOpen()) { // раскрытая пасть — слабое место
       rect(g, 9, -4, 9, 8, P.k); rect(g, 10, -3, 7, 6, '#a80000');
       rect(g, 11, -2, 5, 4, Math.floor(this.t * 8) % 2 ? '#f83800' : '#fcd820');
@@ -1137,13 +1114,9 @@ class Scorpion extends Boss {
       const a = this.t * 5 + i * 2.1;
       rect(g, Math.round(this.x + Math.cos(a) * 12) - 1, Math.round(this.y - 24 + Math.sin(a) * 3) - 1, 2, 2, i % 2 ? '#fcd820' : '#fcfcfc');
     }
-    // хвост и жало поверх спины
-    const T = this.tailPts();
-    for (let i = 0; i < T.length; i++) { const p = T[i], r = i < 3 ? 4 : 3; disc(g, p.x, p.y, r, P.k); disc(g, p.x, p.y, r - 1, fl ? '#fcfcfc' : P.m); rect(g, Math.round(p.x) - 1, Math.round(p.y) - 1, 1, 1, P.l); }
-    const tip = T[T.length - 1], pre = T[T.length - 2], ta = angleTo(pre.x, pre.y, tip.x, tip.y);
-    disc(g, tip.x, tip.y, 4, P.k);
-    disc(g, tip.x, tip.y, 3, this.sting > 0 && Math.floor(this.t * 16) % 2 ? '#fcfcfc' : P.e);
-    pline(g, tip.x, tip.y, tip.x + Math.cos(ta) * 6, tip.y + Math.sin(ta) * 6, P.w, 2);
+    // жало
+    const T = this.tailPts(), tip = T[T.length - 1]; // хвост есть на картинке — светится только жало
+    if (this.sting > 0) disc(g, tip.x, tip.y, 3, Math.floor(this.t * 16) % 2 ? '#fcfcfc' : P.e);
   }
 }
 
@@ -1307,14 +1280,11 @@ class Phantom extends Boss {
       Sound.play('eshoot');
     }
   }
-  drawShip(g, x, y, a, alpha, fl) {
+  drawShip(g, x, y, a, alpha, fl, ta = a) {
     if (alpha <= 0) return;
-    const S = BossGfx.phantom();
     g.globalAlpha = alpha < 1 ? alpha * (Math.random() < 0.25 ? 0.4 : 1) : 1;
-    g.save();
-    g.translate(Math.round(x), Math.round(y)); g.rotate(a);
-    g.drawImage((fl ? S.w : S.n)[Math.floor(this.t * 6) % 2], -16, -16);
-    g.restore();
+    drawArt(g, 'phantom', x, y, a, fl);
+    drawArt(g, 'phantomTur', x, y, ta, fl);
     if (alpha < 1) for (let i = 0; i < 3; i++) rect(g, Math.round(x - 16 + rand(-4, 4)), Math.round(y + rand(-14, 14)), 32, 1, Math.random() < 0.5 ? '#f838f8' : '#38f8f8');
     g.globalAlpha = 1;
   }
@@ -1324,7 +1294,7 @@ class Phantom extends Boss {
   }
   drawAir(g) {
     for (const d of this.decoys) this.drawShip(g, d.x, d.y, d.a, d.alpha, false);
-    this.drawShip(g, this.x, this.y, this.a, this.alpha, this.flash > 0);
+    this.drawShip(g, this.x, this.y, this.a, this.alpha, this.flash > 0, this.beam ? this.beam.a : this.a); // лазер доворачивает на цель
     const B = this.beam;
     if (!B) return;
     const c = Math.cos(B.a), s = Math.sin(B.a), x0 = this.x + c * 16, y0 = this.y + s * 16, x1 = this.x + c * 460, y1 = this.y + s * 460;
@@ -1339,7 +1309,509 @@ class Phantom extends Boss {
   }
 }
 
-// у каждого биома два босса: какой выпадет — решает жребий забега, на следующем цикле — другой
-const BOSS_SETS = [['goliath', 'twins'], ['heli', 'cryo'], ['worm', 'scorpion'], ['omega', 'phantom']];
-const BOSS_CLASSES = { goliath: Goliath, heli: Heli, worm: Worm, omega: Omega, twins: Twins, cryo: Cryo, scorpion: Scorpion, phantom: Phantom };
+// ------------------------------------------------------------
+//  9. ИНФЕРНО — огнемётный танк: струя огня веером, напалм навесом, горящие лужи.
+//     Слабое место — топливный бак на корме (×2): заходить со спины.
+// ------------------------------------------------------------
+const FIRE_COLS = ['#fcfcfc', '#fcf0a0', '#fcc040', '#f88010', '#d83000', '#801000', '#401000'];
+class Inferno extends Boss {
+  constructor(scale) {
+    super('ИНФЕРНО', Math.round(105 * scale));
+    this.x = FW / 2; this.y = -30; this.a = Math.PI / 2; this.gunA = Math.PI / 2; this.state = 'enter'; this.anim = 0;
+    this.tgx = FW / 2; this.tgy = FH / 2; this.tgtT = 0; this.msgT = 0;
+    this.flame = null; this.flameT = 2; this.napT = 3.5; this.trailT = 0; this.ringT = 6; this.minionT = 12; this.pools = [];
+  }
+  bounds() { return { x: this.x - 20, y: this.y - 20, w: 40, h: 40 }; }
+  blocks(x, y, w, h) { return this.alive && !this.dying && overlap(x, y, w, h, this.x - 15, this.y - 15, 30, 30); }
+  hitTest(x, y, h) {
+    if (!this.active || dist(x, y, this.x, this.y) > 17 + h) return null;
+    const fw = (x - this.x) * Math.cos(this.a) + (y - this.y) * Math.sin(this.a);
+    return fw < -8 ? 'tank' : 'body';
+  }
+  damage(dmg, part) {
+    if (!this.active || this.dying) return 'reflect';
+    if (part === 'tank') {
+      if (this.msgT <= 0) { this.msgT = 0.8; G.popups.push(new Popup(this.x, this.y - 26, 'БАК ×2', '#fcd820')); }
+      return super.damage(dmg * 2);
+    }
+    return super.damage(dmg);
+  }
+  pool(x, y, r, t) { if (this.pools.length < 24) this.pools.push({ x, y, r, t, max: t }); }
+  move(dx, dy) {
+    const nx = clamp(this.x + dx, 16, FW - 16), ny = clamp(this.y + dy, 16, FH - 16);
+    if (!this.pushPlayers(nx - 15, ny - 15, 30, 30, nx - this.x, ny - this.y, 1)) return false;
+    this.x = nx; this.y = ny; this.anim += Math.hypot(dx, dy) * 0.4;
+    if (G.level.destroyCircle(this.x + Math.cos(this.a) * 6, this.y + Math.sin(this.a) * 6, 16, false)) Sound.play('brick');
+    return true;
+  }
+  update(dt) {
+    this.t += dt; this.flash -= dt; this.msgT -= dt;
+    for (const q of this.pools) {
+      q.t -= dt;
+      for (const p of G.players) if (!p.dead && dist(q.x, q.y, p.cx, p.cy) < q.r) p.hurt(1);
+    }
+    this.pools = this.pools.filter(q => q.t > 0);
+    if (this.dying) { this.flame = null; return this.updateDeath(dt); }
+    if (this.state === 'enter') {
+      this.y += 34 * dt; this.anim += dt * 12;
+      if (this.y > 0) G.level.destroyCircle(this.x, this.y, 18, false);
+      if (this.y >= 50) { this.state = 'fight'; this.active = true; }
+      return;
+    }
+    if (this.phase === 1 && this.hp < this.maxHp * 0.5) { this.phase = 2; this.ringT = 1; G.banner('ИНФЕРНО: ПЕРЕГРЕВ!', '#f87800'); Sound.play('roar'); }
+    const tg = G.nearestPlayer(this.x, this.y), F = this.flame;
+    if (tg && !(F && F.spin)) this.gunA += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.gunA), -2.6 * dt, 2.6 * dt);
+    // держится на дистанции струи и подъезжает, давя кирпич
+    this.tgtT -= dt;
+    if (this.tgtT <= 0 && tg) {
+      const a = rand(0, Math.PI * 2);
+      this.tgx = clamp(tg.cx + Math.cos(a) * 60, 24, FW - 24); this.tgy = clamp(tg.cy + Math.sin(a) * 60, 24, FH - 24);
+      this.tgtT = rand(1.5, 2.5);
+    }
+    if (dist(this.x, this.y, this.tgx, this.tgy) > 8) {
+      this.a += clamp(normA(angleTo(this.x, this.y, this.tgx, this.tgy) - this.a), -1.6 * dt, 1.6 * dt);
+      const sp = (this.phase === 1 ? 30 : 40) * (F ? 0.35 : 1) * dt;
+      if (!this.move(Math.cos(this.a) * sp, Math.sin(this.a) * sp)) this.tgtT = 0;
+    }
+    // струя огня: короткий замах (сопло светится), потом веер
+    this.flameT -= dt;
+    if (!F && this.flameT <= 0 && tg && dist(this.x, this.y, tg.cx, tg.cy) < 130) { this.flame = { t: 0, e: 0, dur: this.phase === 1 ? 1.4 : 1.8, spin: false }; Sound.play('dash'); }
+    if (this.phase === 2) {
+      this.ringT -= dt;
+      if (this.ringT <= 0 && !this.flame) { this.flame = { t: 0, e: 0, dur: 2.4, spin: true }; this.ringT = 8; Sound.play('roar'); }
+      this.trailT -= dt;
+      if (this.trailT <= 0) { this.trailT = 0.6; this.pool(this.x - Math.cos(this.a) * 16, this.y - Math.sin(this.a) * 16, 10, 4); }
+      this.minionT -= dt;
+      if (this.minionT <= 0) { this.minionT = 14; G.spawnMinions(2, 'flamer', this.x, this.y); }
+    }
+    if (this.flame) {
+      const S = this.flame;
+      S.t += dt; S.e -= dt;
+      if (S.spin && S.t > 0.35) this.gunA += 3.2 * dt;
+      if (S.t > 0.35 && S.e <= 0) {
+        S.e = 0.035;
+        const a = this.gunA + (S.spin ? 0 : Math.sin(S.t * 5) * 0.45) + rand(-0.12, 0.12);
+        enemyShot(this.x + Math.cos(this.gunA) * 16, this.y + Math.sin(this.gunA) * 16, a, 150, { kind: 'flame', size: 5, breaks: false, life: rand(0.6, 0.75) });
+      }
+      if (S.t >= S.dur + 0.35) { this.flame = null; this.flameT = this.phase === 1 ? 2.6 : 1.8; }
+    }
+    // напалм навесом: на месте падения горит лужа
+    this.napT -= dt;
+    if (this.napT <= 0 && tg) {
+      this.napT = this.phase === 1 ? 4 : 3;
+      for (let k = 0; k < (this.phase === 1 ? 1 : 3); k++) {
+        const ax = clamp(tg.cx + (k ? rand(-44, 44) : rand(-8, 8)), 10, FW - 10), ay = clamp(tg.cy + (k ? rand(-44, 44) : rand(-8, 8)), 10, FH - 10);
+        G.mortars.push(new Mortar(this.x, this.y, ax, ay, 1.1, { r: 12, h: 36, col: '#f87800' }));
+        later(1.1, () => { if (this.alive && !this.dying) this.pool(ax, ay, 14, 5); });
+      }
+      Sound.play('mortar');
+    }
+  }
+  drawGround(g) {
+    const t = this.t;
+    for (const q of this.pools) { // горящие лужи
+      if (q.t < 1 && Math.floor(q.t * 10) % 2) continue;
+      const k = Math.min(1, (q.max - q.t) * 4), r = Math.max(1, Math.round(q.r * k));
+      ellipse(g, q.x, q.y, r, Math.max(1, Math.round(r * 0.7)), '#801000');
+      ellipse(g, q.x, q.y, Math.max(1, r - 3), Math.max(1, Math.round((r - 3) * 0.7)), Math.floor(t * 8 + q.x) % 2 ? '#f87800' : '#d83000');
+      if (Math.floor(t * 6 + q.y) % 2) rect(g, Math.round(q.x + Math.sin(t * 9 + q.x) * 5), Math.round(q.y - 2), 2, 2, '#fcd820');
+    }
+    const fl = this.flash > 0;
+    drawArt(g, trk('inferno', this.anim), this.x, this.y, this.a, fl); // топливный бак на корме — слабое место
+    drawArt(g, 'infernoTur', this.x, this.y, this.gunA, fl);
+    const x = this.x, y = this.y, tx = x + Math.cos(this.gunA) * 10, ty = y + Math.sin(this.gunA) * 10;
+    const wind = this.flame && this.flame.t < 0.35;
+    disc(g, tx, ty, wind ? 3 + Math.floor(t * 20) % 2 : 2, Math.floor(t * 10) % 2 ? '#fcd820' : '#f83800');
+  }
+}
+
+// ------------------------------------------------------------
+//  10. БУР — подкопщик: идёт под землёй, выныривает под игроком, рушит стены,
+//      минирует поле. Вынырнув, на миг застревает (×2).
+// ------------------------------------------------------------
+class Drill extends Boss {
+  constructor(scale) {
+    super('БУР', Math.round(95 * scale));
+    this.x = FW / 2; this.y = FH / 2 - 20; this.a = Math.PI / 2; this.state = 'under'; this.st = 1.6;
+    this.upT = 0; this.stuck = 0; this.mineT = 1; this.shotT = 1; this.trailT = 0; this.minionT = 12; this.spin = 0; this.msgT = 0; this.walk = 0;
+  }
+  bounds() { return { x: this.x - 18, y: this.y - 18, w: 36, h: 36 }; }
+  blocks(x, y, w, h) { return this.alive && !this.dying && this.state === 'up' && overlap(x, y, w, h, this.x - 13, this.y - 13, 26, 26); }
+  hitTest(x, y, h) { return this.active && this.state === 'up' && dist(x, y, this.x, this.y) < 15 + h ? 'body' : null; }
+  damage(dmg, part) {
+    if (!this.active || this.dying) return 'reflect';
+    if (this.stuck > 0 && part !== 'grenade') {
+      if (this.msgT <= 0) { this.msgT = 0.8; G.popups.push(new Popup(this.x, this.y - 24, 'ЗАСТРЯЛ ×2', '#fcd820')); }
+      return super.damage(dmg * 2);
+    }
+    return super.damage(dmg);
+  }
+  mine(x, y) { if (G.mines.length < 14) { G.mines.push(new EMine(x, y)); Sound.play('mine'); } }
+  emerge() {
+    const first = !this.active;
+    this.state = 'up'; this.active = true; this.stuck = 1.2; this.upT = this.phase === 1 ? 4 : 3.2;
+    G.level.destroyCircle(this.x, this.y, 22, false);
+    explode(this.x, this.y, 24, { hurtPlayers: !first });
+    if (!first) G.ring(this.x, this.y, this.phase === 1 ? 12 : 18, 85, rand(0, 1), 'small');
+    G.shake = 5; Sound.play('roar');
+  }
+  update(dt) {
+    this.t += dt; this.flash -= dt; this.msgT -= dt; this.stuck -= dt;
+    this.spin += dt * (this.state === 'up' ? 18 : 30);
+    if (this.dying) { this.state = 'up'; return this.updateDeath(dt); }
+    if (this.phase === 1 && this.hp < this.maxHp * 0.5) { this.phase = 2; G.banner('БУР: ГЛУБИННОЕ МИНИРОВАНИЕ!', '#e8a810'); Sound.play('roar'); }
+    const tg = G.nearestPlayer(this.x, this.y);
+    if (this.state === 'under') {
+      this.st -= dt;
+      if (tg) this.a += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.a), -3 * dt, 3 * dt);
+      const sp = (this.phase === 1 ? 95 : 115) * dt;
+      this.x = clamp(this.x + Math.cos(this.a) * sp, 16, FW - 16); this.y = clamp(this.y + Math.sin(this.a) * sp, 16, FH - 16);
+      if (Math.random() < 0.7) G.particles.push(new Particle(this.x + rand(-6, 6), this.y + rand(-6, 6), rand(-30, 30), rand(-30, 30), 0.4, pick(['#5c3c1c', '#8c6c3c', '#3c2810']), 2));
+      G.shake = Math.max(G.shake, 0.6);
+      if (this.phase === 2 && this.active) { this.trailT -= dt; if (this.trailT <= 0) { this.trailT = 0.8; this.mine(this.x, this.y); } }
+      if (this.st <= 0) { this.state = 'warn'; this.st = 0.7; Sound.play('charge'); }
+      return;
+    }
+    if (this.state === 'warn') {
+      this.st -= dt;
+      if (tg) { const d = dist(this.x, this.y, tg.cx, tg.cy); if (d > 2) { this.x += (tg.cx - this.x) / d * 25 * dt; this.y += (tg.cy - this.y) / d * 25 * dt; } }
+      if (this.st <= 0) this.emerge();
+      return;
+    }
+    // на поверхности
+    this.upT -= dt;
+    for (const p of G.players) if (!p.dead && dist(this.x, this.y, p.cx, p.cy) < 16) p.hurt(1);
+    if (this.stuck <= 0) {
+      if (tg) this.a += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.a), -2 * dt, 2 * dt);
+      const sp = (this.phase === 1 ? 28 : 36) * dt, nx = clamp(this.x + Math.cos(this.a) * sp, 16, FW - 16), ny = clamp(this.y + Math.sin(this.a) * sp, 16, FH - 16);
+      if (this.pushPlayers(nx - 13, ny - 13, 26, 26, nx - this.x, ny - this.y, 1)) { this.x = nx; this.y = ny; this.walk += sp * 0.5; }
+      if (G.level.destroyCircle(this.x + Math.cos(this.a) * 12, this.y + Math.sin(this.a) * 12, 12, false)) Sound.play('brick');
+      this.shotT -= dt;
+      if (this.shotT <= 0 && tg) {
+        this.shotT = this.phase === 1 ? 1.3 : 1.0;
+        const a = angleTo(this.x, this.y, tg.cx, tg.cy);
+        for (const o of [-0.25, 0, 0.25]) enemyShot(this.x + Math.cos(a) * 14, this.y + Math.sin(a) * 14, a + o, 120, { kind: 'small', size: 3 });
+        Sound.play('eshoot');
+      }
+      this.mineT -= dt;
+      if (this.mineT <= 0) { this.mineT = 1.6; this.mine(this.x - Math.cos(this.a) * 16, this.y - Math.sin(this.a) * 16); }
+    }
+    if (this.phase === 2) { this.minionT -= dt; if (this.minionT <= 0) { this.minionT = 14; G.spawnMinions(2, 'miner', this.x, this.y); } }
+    if (this.upT <= 0) {
+      this.state = 'under'; this.st = this.phase === 1 ? 2.2 : 1.8; this.stuck = 0;
+      G.effects.push(new Boom(this.x, this.y, 12, { quiet: true, pal: ['#c8a870', '#8c6c3c', '#5c3c1c', '#3c2810', '#2c1c08', '#1c1004', '#0c0800'] }));
+      Sound.play('brick');
+    }
+  }
+  drawGround(g) {
+    const x = this.x, y = this.y, t = this.t;
+    if (this.state !== 'up') {
+      const j = Math.floor(t * 20) % 2;
+      ellipse(g, x, y + j, 9, 5, '#5c3c1c'); rect(g, Math.round(x) - 3, Math.round(y) - 3, 5, 2, '#8c6c3c');
+      if (this.state === 'warn') circle(g, x, y, 22, Math.floor(t * 16) % 2 ? '#f83800' : '#fcd820', 3);
+      return;
+    }
+    const fl = this.flash > 0;
+    ellipse(g, x, y + 3, 17, 8, '#1c1008');
+    const jit = Math.floor(this.spin) % 2 ? 0.03 : -0.03; // бур дрожит, вращаясь
+    drawArt(g, trk('drill', this.walk), x, y, this.a + jit, fl, 4);
+    if (this.stuck > 0) for (let i = 0; i < 3; i++) { const a = t * 5 + i * 2.1; rect(g, Math.round(x + Math.cos(a) * 12) - 1, Math.round(y - 20 + Math.sin(a) * 3) - 1, 2, 2, i % 2 ? '#fcd820' : '#fcfcfc'); }
+  }
+}
+
+// ------------------------------------------------------------
+//  11. МАГНЕТРОН — энергощит с одной стороны отбивает снаряды в стрелка,
+//      магнит тянет игроков, дуги бьют по меткам. После магнита щит перегрет.
+// ------------------------------------------------------------
+class Magnet extends Boss {
+  constructor(scale) {
+    super('МАГНЕТРОН', Math.round(105 * scale));
+    this.x = FW / 2; this.y = -30; this.state = 'enter'; this.shA = Math.PI / 2; this.vx = 0; this.vy = 0; this.tx = this.x; this.ty = 60; this.moveT = 0;
+    this.pull = null; this.pullT = 6; this.over = 0; this.arcs = []; this.arcT = 2.5; this.boltT = 1.5; this.ringT = 5; this.minionT = 14; this.msgT = 0;
+  }
+  shieldOn() { return this.over <= 0 && !this.dying; }
+  bounds() { return { x: this.x - 24, y: this.y - 24, w: 48, h: 48 }; }
+  blocks(x, y, w, h) { return this.alive && !this.dying && overlap(x, y, w, h, this.x - 13, this.y - 13, 26, 26); }
+  hitTest(x, y, h) {
+    if (!this.active) return null;
+    const d = dist(x, y, this.x, this.y);
+    if (d > 23 + h) return null;
+    if (this.shieldOn() && d > 10 && Math.abs(normA(angleTo(this.x, this.y, x, y) - this.shA)) < Math.PI / 2) return 'shield';
+    return d < 15 + h ? 'core' : null;
+  }
+  damage(dmg, part) {
+    if (!this.active || this.dying) return 'reflect';
+    if (part === 'shield') {
+      if (this.msgT <= 0) { this.msgT = 1.2; G.popups.push(new Popup(this.x, this.y - 28, 'ЩИТ', '#a4e4fc')); }
+      return 'bounce';
+    }
+    return super.damage(dmg);
+  }
+  update(dt) {
+    this.t += dt; this.flash -= dt; this.msgT -= dt; this.over -= dt;
+    if (this.dying) { this.pull = null; this.arcs = []; return this.updateDeath(dt); }
+    if (this.state === 'enter') { this.y += 40 * dt; if (this.y >= 60) { this.y = 60; this.state = 'fight'; this.active = true; } return; }
+    if (this.phase === 1 && this.hp < this.maxHp * 0.5) { this.phase = 2; G.banner('МАГНЕТРОН: ПЕРЕГРУЗКА ПОЛЯ!', '#3cbcfc'); Sound.play('roar'); }
+    const tg = G.nearestPlayer(this.x, this.y);
+    if (tg && this.shieldOn()) { const r = this.phase === 1 ? 1.3 : 1.9; this.shA += clamp(normA(angleTo(this.x, this.y, tg.cx, tg.cy) - this.shA), -r * dt, r * dt); }
+    // парит на антигравах на средней дистанции
+    this.moveT -= dt;
+    if (this.moveT <= 0 && tg) {
+      const a = rand(0, Math.PI * 2), r = rand(90, 130);
+      this.tx = clamp(tg.cx + Math.cos(a) * r, 24, FW - 24); this.ty = clamp(tg.cy + Math.sin(a) * r, 24, FH - 24); this.moveT = rand(2, 3.5);
+    }
+    this.vx += ((this.tx - this.x) * 1.4 - this.vx * 2) * dt; this.vy += ((this.ty - this.y) * 1.4 - this.vy * 2) * dt;
+    const maxv = this.pull ? 10 : 50, v = Math.hypot(this.vx, this.vy);
+    if (v > maxv) { this.vx *= maxv / v; this.vy *= maxv / v; }
+    this.x = clamp(this.x + this.vx * dt, 20, FW - 20); this.y = clamp(this.y + this.vy * dt, 20, FH - 20);
+    for (const p of G.players) if (!p.dead && dist(this.x, this.y, p.cx, p.cy) < 16) p.hurt(1);
+    // магнит: тянет всех к себе, после — щит перегрет и отключён
+    this.pullT -= dt;
+    if (!this.pull && this.pullT <= 0) { this.pull = { t: 0, dur: 2.6 }; Sound.play('charge'); G.popups.push(new Popup(this.x, this.y - 28, 'МАГНИТ!', '#3cbcfc', 1.2)); }
+    if (this.pull) {
+      const P = this.pull, force = (this.phase === 1 ? 34 : 48) * dt;
+      P.t += dt;
+      for (const p of G.players) {
+        if (p.dead) continue;
+        const dx = this.x - p.cx, dy = this.y - p.cy, d = Math.hypot(dx, dy);
+        if (d < 20) continue;
+        const nx = p.x + dx / d * force, ny = p.y + dy / d * force;
+        if (nx >= 0 && nx + 16 <= FW && !G.level.tankBlocked(nx, p.y, 16, 16)) p.x = nx;
+        if (ny >= 0 && ny + 16 <= FH && !G.level.tankBlocked(p.x, ny, 16, 16)) p.y = ny;
+      }
+      if (P.t >= P.dur) {
+        this.pull = null; this.pullT = this.phase === 1 ? 8 : 6; this.over = 2.8;
+        G.popups.push(new Popup(this.x, this.y - 28, 'ЩИТ ПЕРЕГРЕТ!', '#fcd820', 1.4));
+        G.effects.push(new RingFx(this.x, this.y, 6, 30, '#fcd820', 0.4)); Sound.play('zap');
+      }
+    }
+    // дуги: метка на земле, через 0.75 с — разряд
+    this.arcT -= dt;
+    if (this.arcT <= 0) {
+      this.arcT = this.phase === 1 ? 2.4 : 1.7;
+      const alive = G.players.filter(p => !p.dead);
+      for (let k = 0; k < (this.phase === 1 ? 1 : 2) && alive.length; k++) {
+        const p = alive[k % alive.length];
+        this.arcs.push({ x: clamp(p.cx + (k ? rand(-30, 30) : 0), 8, FW - 8), y: clamp(p.cy + (k ? rand(-30, 30) : 0), 8, FH - 8), t: 0.75 });
+      }
+    }
+    for (const A of this.arcs) {
+      A.t -= dt;
+      if (A.t > 0) continue;
+      G.effects.push(new ArcFx([[this.x, this.y], [A.x, A.y]], 0.25), new RingFx(A.x, A.y, 2, 14, '#e8fcff', 0.2));
+      for (const p of G.players) if (!p.dead && dist(A.x, A.y, p.cx, p.cy) < 13) p.hurt(1);
+      Sound.play('zap');
+    }
+    this.arcs = this.arcs.filter(A => A.t > 0);
+    // плазма веером из-за щита
+    this.boltT -= dt;
+    if (this.boltT <= 0 && tg) {
+      this.boltT = this.phase === 1 ? 1.9 : 1.4;
+      const a = angleTo(this.x, this.y, tg.cx, tg.cy);
+      for (const o of [-0.2, 0, 0.2]) enemyShot(this.x + Math.cos(a) * 24, this.y + Math.sin(a) * 24, a + o, 140, { kind: 'bolt', size: 3 });
+      Sound.play('eshoot');
+    }
+    if (this.phase === 2) {
+      this.ringT -= dt; if (this.ringT <= 0) { this.ringT = 5; G.ring(this.x, this.y, 16, 80, rand(0, 1), 'orb'); }
+      this.minionT -= dt; if (this.minionT <= 0) { this.minionT = 15; G.spawnMinions(2, 'shield', this.x, this.y); }
+    }
+  }
+  drawGround(g) {
+    const x = this.x, y = this.y, t = this.t, fl = this.flash > 0;
+    for (const A of this.arcs) { // метки разряда
+      const c = Math.floor(t * (A.t < 0.3 ? 24 : 12)) % 2 ? '#3cbcfc' : '#fcfcfc';
+      circle(g, A.x, A.y, 12 * (0.6 + A.t * 0.5), c, 1); rect(g, Math.round(A.x) - 3, Math.round(A.y), 7, 1, c); rect(g, Math.round(A.x), Math.round(A.y) - 3, 1, 7, c);
+    }
+    if (this.pull) for (let i = 0; i < 3; i++) circle(g, x, y, 70 - ((this.pull.t * 70 + i * 23) % 70), i % 2 ? '#3c78f8' : '#a4e4fc', 1);
+    ellipse(g, x + 4, y + 14, 14, 5, 'rgba(0,0,0,0.45)');
+    drawArt(g, 'magnet', x, y, t * 0.6, fl); // корпус с катушками медленно вращается
+    drawArt(g, 'magnetTur', x, y, this.shA, fl); // излучатель смотрит туда же, куда щит
+    if (Math.floor(t * 12) % 3 === 0) { // разряды между катушками
+      const a = rand(0, Math.PI * 2), r = rand(14, 20);
+      pline(g, x + Math.cos(a) * r, y + Math.sin(a) * r, x + Math.cos(a + 0.5) * r + rand(-3, 3), y + Math.sin(a + 0.5) * r + rand(-3, 3), '#a4e4fc', 1);
+    }
+    if (this.shieldOn()) {
+      for (let k = -12; k <= 12; k++) {
+        const a = this.shA + k * 0.125;
+        rect(g, Math.round(x + Math.cos(a) * 21) - 1, Math.round(y + Math.sin(a) * 21) - 1, 2, 2, Math.floor(t * 10 + k) % 3 ? '#a4e4fc' : '#fcfcfc');
+        rect(g, Math.round(x + Math.cos(a) * 23), Math.round(y + Math.sin(a) * 23), 1, 1, '#3c78f8');
+      }
+    } else if (Math.random() < 0.6) rect(g, Math.round(x + rand(-16, 16)), Math.round(y + rand(-16, 16)), 2, 1, '#fcd820'); // перегрев: искры
+  }
+}
+
+// ------------------------------------------------------------
+//  12. УЛЕЙ — летающая матка: рой дронов-камикадзе (их можно сбивать),
+//      ядро закрыто сотами — пока цела хоть одна, ядро неуязвимо.
+// ------------------------------------------------------------
+class Hive extends Boss {
+  constructor(scale) {
+    super('УЛЕЙ', Math.round(100 * scale));
+    this.x = FW / 2; this.y = -40; this.vx = 0; this.vy = 0; this.tx = FW / 2; this.ty = 70; this.moveT = 3; this.state = 'enter';
+    this.cellHp = Math.round(5 * Math.sqrt(scale)); this.cells = []; this.orbA = 0; this.regrowT = 0; this.msgT = 0;
+    this.droneT = 3; this.stingT = 2; this.minionT = 12;
+    this.makeCells();
+  }
+  makeCells() {
+    this.cells = [];
+    for (let i = 0; i < 6; i++) this.cells.push({ hp: this.cellHp, flash: 0, k: i / 6, x: this.x, y: this.y });
+    this.placeCells();
+  }
+  placeCells() { for (const c of this.cells) { const a = this.orbA + c.k * Math.PI * 2; c.x = this.x + Math.cos(a) * 22; c.y = this.y + Math.sin(a) * 18; } }
+  bounds() { return { x: this.x - 30, y: this.y - 28, w: 60, h: 56 }; }
+  hitTest(x, y, h) {
+    if (!this.active || this.y < -10) return null;
+    for (const c of this.cells) if (dist(x, y, c.x, c.y) < 6 + h) return c;
+    return dist(x, y, this.x, this.y) < 14 + h ? 'core' : null;
+  }
+  damage(dmg, part) {
+    if (!this.active || this.dying) return 'reflect';
+    if (part === 'grenade') {
+      for (const c of this.cells.slice(0, 3)) this.breakCell(c);
+      return this.cells.length ? 'ok' : super.damage(dmg);
+    }
+    if (part && typeof part === 'object') {
+      if (!this.cells.includes(part)) return 'reflect';
+      part.hp -= dmg; part.flash = 0.08; Sound.play('hit');
+      if (part.hp <= 0) { this.breakCell(part); return super.damage(3); }
+      return 'ok';
+    }
+    if (this.cells.length) {
+      if (this.msgT <= 0) { this.msgT = 1.2; G.popups.push(new Popup(this.x, this.y - 30, 'СБЕЙТЕ СОТЫ!', '#fcd820')); }
+      return 'reflect';
+    }
+    return super.damage(dmg);
+  }
+  breakCell(c) {
+    this.cells.splice(this.cells.indexOf(c), 1);
+    G.effects.push(new Boom(c.x, c.y, 9));
+    Sound.play('brick');
+    if (!this.cells.length) {
+      this.regrowT = this.phase === 1 ? 7 : 5.5;
+      G.popups.push(new Popup(this.x, this.y - 30, 'ЯДРО ОТКРЫТО!', '#f83800', 1.4));
+    }
+  }
+  update(dt) {
+    this.t += dt; this.flash -= dt; this.msgT -= dt;
+    for (const c of this.cells) c.flash -= dt;
+    this.orbA += dt * 1.2; this.placeCells();
+    if (this.dying) { this.y += 6 * dt; return this.updateDeath(dt); }
+    if (this.state === 'enter') { this.y += 40 * dt; if (this.y >= 60) { this.state = 'hover'; this.active = true; } return; }
+    if (this.phase === 1 && this.hp < this.maxHp * 0.5) { this.phase = 2; G.banner('УЛЕЙ: РОЙ В ЯРОСТИ!', '#fcd820'); Sound.play('roar'); }
+    const tg = G.nearestPlayer(this.x, this.y);
+    this.moveT -= dt;
+    if (this.moveT <= 0 || dist(this.x, this.y, this.tx, this.ty) < 10) {
+      this.tx = clamp((tg ? tg.cx : FW / 2) + rand(-110, 110), 40, FW - 40); this.ty = rand(36, this.phase === 2 ? 140 : 110); this.moveT = rand(2.5, 4);
+    }
+    this.vx += ((this.tx - this.x) * 1.4 - this.vx * 1.8) * dt; this.vy += ((this.ty - this.y) * 1.4 - this.vy * 1.8) * dt;
+    const maxv = this.phase === 2 ? 80 : 60, v = Math.hypot(this.vx, this.vy);
+    if (v > maxv) { this.vx *= maxv / v; this.vy *= maxv / v; }
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    if (this.regrowT > 0) {
+      this.regrowT -= dt;
+      if (this.regrowT <= 0) { this.makeCells(); Sound.play('ice'); G.effects.push(new RingFx(this.x, this.y, 30, 10, '#fcd820', 0.4)); }
+    }
+    // рой: дроны вылетают веером и наводятся на ближайшего игрока
+    this.droneT -= dt;
+    if (this.droneT <= 0) {
+      this.droneT = this.phase === 1 ? 5 : 3.8;
+      const n = Math.min(this.phase === 1 ? 3 : 5, 10 - G.bullets.filter(b => b.alive && b.kind === 'drone').length);
+      for (let i = 0; i < n; i++) {
+        const a = Math.PI / 2 + (i - (n - 1) / 2) * 0.6;
+        G.bullets.push(new Bullet(this.x + Math.cos(a) * 14, this.y + Math.sin(a) * 14, Math.cos(a) * 70, Math.sin(a) * 70, 'enemy', null,
+          { kind: 'drone', size: 5, hp: 1, homing: 2.4, explosive: 14, cancel: false, fly: true, life: 7 }));
+      }
+      if (n > 0) Sound.play('missile');
+    }
+    this.stingT -= dt;
+    if (this.stingT <= 0 && tg) {
+      this.stingT = this.phase === 1 ? 2.2 : 1.6;
+      const n = this.phase === 1 ? 3 : 5, a = angleTo(this.x, this.y + 10, tg.cx, tg.cy);
+      for (let k = 0; k < n; k++) enemyShot(this.x, this.y + 10, a + (k - (n - 1) / 2) * 0.18, 130, { kind: 'small', size: 3 });
+      Sound.play('eshoot');
+    }
+    if (this.phase === 2) { this.minionT -= dt; if (this.minionT <= 0) { this.minionT = 13; G.spawnMinions(2, 'kamikaze', this.x, this.y + 20); } }
+  }
+  drawGround(g) { if (this.y > -30) ellipse(g, this.x + 10, this.y + 24, 18, 6, 'rgba(0,0,0,0.45)'); }
+  drawAir(g) {
+    const x = Math.round(this.x), y = Math.round(this.y), t = this.t, fl = this.flash > 0, wg = Math.floor(t * 24) % 2;
+    for (const s of [-1, 1]) ellipse(g, x + s * 20, y - 6 - wg, 10, 4, 'rgba(220,232,248,0.45)'); // крылья
+    drawArt(g, 'hiveCore', x, y, 0, fl);
+    if (!this.cells.length) { disc(g, x, y, 5, '#3c2400'); disc(g, x, y, 4, Math.floor(t * 10) % 2 ? '#fcd820' : '#f83800'); } // ядро открыто
+    for (const c of this.cells) drawArt(g, 'hiveCell', c.x, c.y, 0, c.flash > 0);
+  }
+}
+
+// ------------------------------------------------------------
+//  ДУЭТ — два босса разом. Снаружи выглядит как один босс (общая полоска здоровья),
+//  попадания уходят тому, в кого попали; граната бьёт обоих.
+// ------------------------------------------------------------
+class Duo extends Boss {
+  constructor(def, scale, k) {
+    const subs = def.ids.map((id, i) => { const b = new BOSS_CLASSES[id](scale); b.shift(def.shift[i][0], def.shift[i][1]); return b; });
+    super(subs.map(b => tr(b.name)).join(' + '), subs[0].maxHp + subs[1].maxHp);
+    this.subs = subs; this.k = k;
+    for (const b of subs) { b.parent = this; b.wraps = new Map(); }
+  }
+  get hudName() { return tr('ДУЭТ') + ' ' + (this.k + 1) + '/' + DUO_BOSSES.length; }
+  live() { return this.subs.filter(b => b.alive && !b.dying); }
+  // обёртка части тела — одна и та же для одной части (пробивающие снаряды помнят, кого уже прошили)
+  wrap(b, p) { let w = b.wraps.get(p); if (!w) { w = { duo: b, p }; b.wraps.set(p, w); } return w; }
+  sync() {
+    const L = this.live();
+    this.hp = this.subs.reduce((a, b) => a + Math.max(0, b.hp), 0);
+    this.flash = Math.max(...this.subs.map(b => b.flash));
+    this.active = L.some(b => b.active);
+    this.dying = !L.length;
+  }
+  aim() { const L = this.live(); return (L.find(b => b.active) || L[0] || this.subs[0]).aim(); }
+  bounds() {
+    const B = (this.live().length ? this.live() : this.subs).map(b => b.bounds());
+    const x0 = Math.min(...B.map(b => b.x)), y0 = Math.min(...B.map(b => b.y));
+    return { x: x0, y: y0, w: Math.max(...B.map(b => b.x + b.w)) - x0, h: Math.max(...B.map(b => b.y + b.h)) - y0 };
+  }
+  blocks(x, y, w, h) { return this.subs.some(b => b.alive && !b.dying && b.blocks(x, y, w, h)); }
+  hitTest(x, y, h) {
+    for (const b of this.live()) { const p = b.hitTest(x, y, h); if (p) return this.wrap(b, p); }
+    return null;
+  }
+  damage(dmg, part) {
+    let r = 'reflect';
+    if (part && part.duo) r = part.duo.damage(dmg, part.p);
+    else for (const b of this.live()) if (b.damage(dmg, 'grenade') === 'ok') r = 'ok';
+    this.sync();
+    return r;
+  }
+  update(dt) {
+    this.t += dt;
+    for (const b of this.subs) if (b.alive) b.update(dt);
+    this.sync();
+  }
+  subDown(b) {
+    this.sync();
+    if (this.subs.some(q => q.alive)) { G.banner(tr(b.name) + ' ' + tr('ПОВЕРЖЕН!'), '#fcd820'); return; }
+    this.alive = false;
+    G.onBossKilled(this);
+  }
+  drawGround(g) { for (const b of this.subs) if (b.alive) b.drawGround(g); }
+  drawAir(g) { for (const b of this.subs) if (b.alive) b.drawAir(g); }
+}
+
+const BOSS_CLASSES = {
+  goliath: Goliath, heli: Heli, worm: Worm, omega: Omega, twins: Twins, cryo: Cryo, scorpion: Scorpion, phantom: Phantom,
+  inferno: Inferno, drill: Drill, magnet: Magnet, hive: Hive,
+};
+// 12 боссов по порядку: по три на биом, без жребия
+const SOLO_BOSSES = ['goliath', 'twins', 'drill', 'heli', 'cryo', 'magnet', 'worm', 'scorpion', 'inferno', 'hive', 'phantom', 'omega'];
+// супер-сложность: шесть дуэтов подряд. Пары подобраны так, чтобы не мешать друг другу:
+// земля + воздух, разные этажи (под землёй / сверху), Омега занимает верх — с ней только летающий Фантом
+const DUO_BOSSES = [
+  { ids: ['goliath', 'heli'], shift: [[0, 0], [0, 0]] },
+  { ids: ['twins', 'hive'], shift: [[0, 0], [0, 0]] },
+  { ids: ['cryo', 'inferno'], shift: [[-100, 0], [100, 0]] },
+  { ids: ['worm', 'magnet'], shift: [[0, 0], [0, 0]] },
+  { ids: ['scorpion', 'drill'], shift: [[0, 0], [0, 40]] },
+  { ids: ['omega', 'phantom'], shift: [[0, 0], [0, 70]] },
+];
 function makeBoss(id, scale) { return new BOSS_CLASSES[id](scale); }
+function makeDuo(k, scale) { return new Duo(DUO_BOSSES[k], scale, k); }
