@@ -511,6 +511,6 @@ function emp(p, r = 64) { // РАЗРЯДНИК
 }
 function ballZap(b) { // ШАРОВАЯ МОЛНИЯ
   G.effects.push(new RingFx(b.x, b.y, 2, 9, '#e8fcff', 0.2));
-  const t = findTarget(b.x, b.y, 80);
+  const t = findTarget(b.x, b.y, 40);
   if (t) zap(b.x, b.y, t, 1, b.owner);
 }

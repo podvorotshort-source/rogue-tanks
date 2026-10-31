@@ -154,7 +154,8 @@ class Bullet {
   update(dt) {
     this.age += dt; this.life -= dt;
     if (this.life <= 0) {
-      if (this.explosive) explode(this.x, this.y, this.explosive, { hurtPlayers: this.team === 'enemy', hurtEnemies: this.team === 'player', hurtBoss: this.team === 'player', by: this.owner, silent: true });
+      // фугас игрока, не долетевший до цели (дробь дробовика), просто гаснет; вражеские ракеты рвутся
+      if (this.explosive && this.team === 'enemy') explode(this.x, this.y, this.explosive, { hurtPlayers: true, silent: true });
       return this.kill();
     }
     if (this.homing) {
