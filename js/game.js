@@ -313,7 +313,7 @@ function saveBest() {
 // почему игрок не может взять карту ('' — может)
 function cantReason(p, id) {
   const P = PERKS[id];
-  if ((p.perks[id] || 0) >= P.max) return 'МАКС.';
+  if ((p.perks[id] || 0) >= (P.aux ? auxLvMax() : P.max)) return 'МАКС.';
   if (P.legend && !synReady(p, id)) return 'НЕТ ЧАСТЕЙ';
   if (P.aux && !p.perks[id] && auxCount(p) >= auxMax()) return 'НЕТ СЛОТА';
   return '';
@@ -688,6 +688,8 @@ function drawHUD() {
     if (!Touch.on) text('ESC ПАУЗА  M МУЗЫКА', W - 3, 8, '#444444', 1, 'right');
   }
 }
+// деление шкалы оружия: жёлтые 1-5, оранжевые 6-10, красные 11-15
+const weaponPip = (p, i) => i < p.weapon ? (i >= 10 ? '#f83800' : i >= 5 ? '#fc9838' : '#fcd820') : '#2c2c2c';
 // мини-панель для 4-6 игроков: метка и прочность, ниже — спецприём и уровень оружия
 function drawPlayerMini(p, x) {
   text(p.label, x, 1, p.color);
@@ -699,7 +701,8 @@ function drawPlayerMini(p, x) {
   const C = CLASSES[p.cls], cd = C.cd * p.stats.cdMul, k = p.scd > 0 ? clamp(1 - p.scd / cd, 0, 1) : 1;
   rect(ctx, x, 10, 16, 3, '#202020');
   rect(ctx, x, 10, Math.round(16 * k), 3, k >= 1 ? (blink(4) ? '#fcfcfc' : p.color) : '#3c78a8');
-  for (let i = 0; i < MAX_WEAPON; i++) rect(ctx, x + 19 + i * 3, 10, 2, 3, i < p.weapon ? (i >= 5 ? '#fc9838' : '#fcd820') : '#2c2c2c');
+  const mw = p.maxWeapon, ms = mw > 10 ? 2 : 3;
+  for (let i = 0; i < mw; i++) rect(ctx, x + 19 + i * ms, 10, ms - 1, 3, weaponPip(p, i));
 }
 function drawPlayerHUD(p, x, compact) {
   text(p.label, x, 1, p.color);
@@ -718,7 +721,8 @@ function drawPlayerHUD(p, x, compact) {
   rect(ctx, x, 9, bw, 4, '#202020');
   rect(ctx, x, 9, Math.round(bw * k), 4, k >= 1 ? (blink(4) ? '#fcfcfc' : p.color) : '#3c78a8');
   if (p.charges > 1) rect(ctx, x + bw - 3, 10, 2, 2, '#06060c'); // накоплен второй заряд спецприёма
-  for (let i = 0; i < MAX_WEAPON; i++) rect(ctx, px + i * ps, 9, ps - 1, 4, i < p.weapon ? (i >= 5 ? '#fc9838' : '#fcd820') : '#2c2c2c');
+  const mw = p.maxWeapon, ws = mw > 10 ? (compact ? 2 : 3) : ps; // 15 делений теснее
+  for (let i = 0; i < mw; i++) rect(ctx, px + i * ws, 9, ws - 1, 4, weaponPip(p, i));
   text(String(p.score).padStart(6, '0'), x + (compact ? 92 : 122), 8, '#d0d0d0', 1, 'right');
 }
 
@@ -812,6 +816,24 @@ function synHint(id) {
     PERKS[s].parts.every(k => k === id || p.perks[k]) && (!PERKS[s].cls || p.cls === PERKS[s].cls)));
   return opens ? 'СИНЕРГИЯ!' : 'В СИНЕРГИИ';
 }
+// 4 и 5 уровни доп. систем (таланты «Конструктор» и «Главный инженер»)
+const AUX_UP = {
+  mg: ['ОЧЕРЕДЬ ИЗ 5 ПУЛЬ, ЧАЩЕ', 'ОЧЕРЕДЬ ИЗ 6, ПУЛИ ПРОШИВАЮТ НАСКВОЗЬ'],
+  mines: ['ДО 10 МИН, УРОН 4', 'ДО 12 МИН, УРОН 5, ВЗРЫВ ШИРЕ'],
+  rk: ['5 РАКЕТ, ЗАЛП ЧАЩЕ', '6 РАКЕТ, ВЗРЫВ ШИРЕ'],
+  coil: ['ДАЛЬШЕ И ЧАЩЕ, МОЛНИЯ ПЕРЕСКАКИВАЕТ НА 2 ЦЕЛИ', 'ЕЩЁ ДАЛЬШЕ, БЬЁТ ДВЕ ЦЕЛИ СРАЗУ'],
+  drone: ['СТРЕЛЯЕТ ЧАЩЕ И СИЛЬНЕЕ', 'ТРИ ДРОНА'],
+  ram: ['УРОН 5, ПРОЛАМЫВАЕТ КИРПИЧ', 'УРОН 6, ЛОМАЕТ СТАЛЬ И ОГЛУШАЕТ'],
+  mort: ['4 МИНЫ ЗА ЗАЛП, ЧАЩЕ', '5 МИН ЗА ЗАЛП, УРОН 3, ВЗРЫВ ШИРЕ'],
+  saw: ['4 ПИЛЫ', '5 ПИЛ'],
+};
+// описание карты: для систем 3+ уровня — что даст следующий уровень (по самому прокачанному игроку)
+function cardDesc(id) {
+  const pk = PERKS[id];
+  if (!AUX_UP[id]) return pk.desc;
+  const next = Math.max(...G.players.map(p => p.perks[id] || 0)) + 1;
+  return next >= 4 && next <= 5 ? tr('УР.') + ' ' + next + ': ' + tr(AUX_UP[id][next - 4]) : pk.desc;
+}
 function drawCard(P, i, x, y, w, h) {
   const id = P.cards[i], pk = PERKS[id], st = cardStyle(pk);
   rect(ctx, x, y, w, h, '#000');
@@ -822,7 +844,7 @@ function drawCard(P, i, x, y, w, h) {
   let yy = y + 42;
   for (const l of wrap(pk.name, maxc)) { text(l, x + w / 2, yy, '#fcfcfc', 1, 'center'); yy += 9; }
   yy += 5;
-  for (const l of wrap(pk.desc, maxc)) { text(l, x + w / 2, yy, '#a8a8a8', 1, 'center'); yy += 9; }
+  for (const l of wrap(cardDesc(id), maxc)) { text(l, x + w / 2, yy, '#a8a8a8', 1, 'center'); yy += 9; }
   const hint = synHint(id);
   if (hint) text(hint, x + w / 2, y + h - 34, hint === 'СИНЕРГИЯ!' ? (blink(3) ? '#fcd820' : '#f87800') : '#7c4000', 1, 'center');
   text(st.label, x + w / 2, y + h - 14, st.b, 1, 'center');

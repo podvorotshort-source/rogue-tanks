@@ -224,7 +224,7 @@ function drawFires(g) {
 // ---------- мины ----------
 class Mine {
   constructor(x, y, owner) { this.x = x; this.y = y; this.owner = owner; this.t = 0; this.dead = false; this.fuse = -1; }
-  get dmg() { const p = this.owner; return ((p.perks.mines || 1) >= 3 ? 3 : 2) * (p.perks.deton ? 1.5 : 1); }
+  get dmg() { const p = this.owner; return [2, 2, 2, 3, 4, 5][p.perks.mines || 1] * (p.perks.deton ? 1.5 : 1); }
   detonate(delay) { if (!this.dead && this.fuse < 0) this.fuse = delay; }
   update(dt) {
     this.t += dt;
@@ -237,7 +237,7 @@ class Mine {
     if (this.dead) return;
     this.dead = true;
     const p = this.owner;
-    explode(this.x, this.y, 16, { hurtEnemies: true, hurtBoss: true, dmg: this.dmg, by: p });
+    explode(this.x, this.y, (p.perks.mines || 0) >= 5 ? 22 : 16, { hurtEnemies: true, hurtBoss: true, dmg: this.dmg, by: p });
     if (p.perks.scorch) fireArea(this.x, this.y, 18, 4, p); // «Выжженная земля»
     if (p.perks.chain) for (let i = 0; i < 3; i++) { // «Цепная реакция»: мина рассыпает бомбы
       const a = i / 3 * Math.PI * 2 + rand(-0.4, 0.4), d = rand(18, 26);
@@ -266,7 +266,8 @@ const newAuxState = () => ({ mgA: -Math.PI / 2, mgCd: 0.5, mgBurst: 0, mgBt: 0, 
 // «Огненный вихрь»: на одну пилу больше и шире круг
 const sawN = p => (p.perks.saw || 0) + (p.perks.whirl && p.perks.saw ? 1 : 0);
 const sawPos = (p, i) => { const a = p.aux.sawA + i / sawN(p) * Math.PI * 2, r = p.perks.whirl ? 26 : 20; return [p.cx + Math.cos(a) * r, p.cy + Math.sin(a) * r]; };
-const dronePos = (p, i) => { const a = p.aux.dA + i * Math.PI; return [p.cx + Math.cos(a) * 22, p.cy + Math.sin(a) * 15]; };
+const droneN = p => [0, 1, 1, 2, 2, 3][p.perks.drone || 0];
+const dronePos = (p, i) => { const a = p.aux.dA + i * Math.PI * 2 / droneN(p); return [p.cx + Math.cos(a) * 22, p.cy + Math.sin(a) * 15]; };
 function frontStrip(p, depth) {
   const d = p.dir, x = p.x, y = p.y;
   return d === 0 ? [x, y - depth, 16, depth] : d === 2 ? [x, y + 16, 16, depth] : d === 1 ? [x + 16, y, depth, 16] : [x - depth, y, depth, 16];
@@ -289,12 +290,12 @@ function updateAux(p, dt) {
     const L = lv('mg'), t = findTarget(p.cx, p.cy, 150);
     if (t) { const q = tpos(t); A.mgA += clamp(normA(angleTo(p.cx, p.cy, q.x, q.y) - A.mgA), -8 * dt, 8 * dt); }
     A.mgCd -= dt;
-    if (A.mgCd <= 0 && t) { A.mgCd = [0, 0.8, 0.7, 0.55][L]; A.mgBurst = L >= 3 ? 4 : 3; }
+    if (A.mgCd <= 0 && t) { A.mgCd = [0, 0.8, 0.7, 0.55, 0.45, 0.4][L]; A.mgBurst = [0, 3, 3, 4, 5, 6][L]; }
     if (A.mgBurst > 0 && (A.mgBt -= dt) <= 0) {
       A.mgBt = 0.08; A.mgBurst--;
       const a = A.mgA + rand(-0.06, 0.06);
       G.bullets.push(new Bullet(p.cx + Math.cos(a) * 6, p.cy + Math.sin(a) * 6, Math.cos(a) * 200, Math.sin(a) * 200, 'player', p,
-        { kind: 'small', dmg: L >= 2 ? 1 : 0.5, breaks: false, col: '#fcd820', life: 1.2 }));
+        { kind: 'small', dmg: L >= 2 ? 1 : 0.5, breaks: false, col: L >= 5 ? '#fcfcfc' : '#fcd820', life: 1.2, pierce: L >= 5 ? 1 : 0 }));
       Sound.play('mg');
     }
   }
@@ -303,8 +304,8 @@ function updateAux(p, dt) {
     const L = lv('mines');
     if (A.mlx === null) { A.mlx = p.x; A.mly = p.y; } // мины кладутся только на ходу
     A.mineCd -= dt;
-    if (A.mineCd <= 0 && dist(p.x, p.y, A.mlx, A.mly) >= 12 && G.mines.filter(m => !m.dead && m.owner === p).length < [0, 4, 6, 8][L]) {
-      dropMine(p); A.mineCd = [0, 1.2, 0.9, 0.7][L];
+    if (A.mineCd <= 0 && dist(p.x, p.y, A.mlx, A.mly) >= 12 && G.mines.filter(m => !m.dead && m.owner === p).length < [0, 4, 6, 8, 10, 12][L]) {
+      dropMine(p); A.mineCd = [0, 1.2, 0.9, 0.7, 0.6, 0.5][L];
     }
   }
   // ракетная установка
@@ -312,14 +313,14 @@ function updateAux(p, dt) {
     const L = lv('rk');
     A.rkCd -= dt;
     if (A.rkCd <= 0) {
-      const n = [0, 2, 3, 4][L], spot = !!p.perks.spotter, ts = rocketTargets(p, n, spot);
+      const n = [0, 2, 3, 4, 5, 6][L], spot = !!p.perks.spotter, ts = rocketTargets(p, n, spot);
       if (!ts.length) A.rkCd = 0.5;
       else {
-        A.rkCd = [0, 4, 3.5, 3][L];
+        A.rkCd = [0, 4, 3.5, 3, 2.6, 2.2][L];
         ts.forEach((t, i) => {
           const q = tpos(t), a = angleTo(p.cx, p.cy, q.x, q.y) + (i - (n - 1) / 2) * 0.6;
           G.bullets.push(new Bullet(p.cx, p.cy, Math.cos(a) * 60, Math.sin(a) * 60, 'player', p,
-            { kind: 'rocket', homing: 5, target: t, accel: 180, maxsp: 175, explosive: 10, dmg: spot ? 3 : 2, life: 3 }));
+            { kind: 'rocket', homing: 5, target: t, accel: 180, maxsp: 175, explosive: L >= 5 ? 14 : 10, dmg: spot ? 3 : 2, life: 3 }));
         });
         Sound.play('missile');
       }
@@ -330,11 +331,12 @@ function updateAux(p, dt) {
     const L = lv('coil');
     A.coilCd -= dt;
     if (A.coilCd <= 0) {
-      const t = findTarget(p.cx, p.cy, [0, 56, 64, 72][L]);
+      const range = [0, 56, 64, 72, 84, 96][L], t = findTarget(p.cx, p.cy, range);
       if (t) {
-        A.coilCd = [0, 1, 0.8, 0.65][L];
+        A.coilCd = [0, 1, 0.8, 0.65, 0.55, 0.45][L];
         zap(p.x + 12, p.y + 2, t, 1, p, 0.6);
-        if (L >= 3 && t !== 'boss') chainLightning(t.cx, t.cy, 1, 50, 1, p, new Set([t]));
+        if (L >= 3 && t !== 'boss') chainLightning(t.cx, t.cy, L >= 4 ? 2 : 1, 50, 1, p, new Set([t]));
+        if (L >= 5) chainLightning(p.x + 12, p.y + 2, 1, range, 1, p, new Set(t === 'boss' ? [] : [t])); // вторая цель сразу
       } else A.coilCd = 0.1;
     }
   }
@@ -343,24 +345,25 @@ function updateAux(p, dt) {
     const L = lv('drone');
     A.dA += 2.8 * dt; A.dCd -= dt;
     if (A.dCd <= 0) {
-      A.dCd = L >= 2 ? 0.38 : 0.5;
-      for (let i = 0; i < (L >= 3 ? 2 : 1); i++) {
+      A.dCd = L >= 4 ? 0.3 : L >= 2 ? 0.38 : 0.5;
+      for (let i = 0; i < droneN(p); i++) {
         const [dx, dy] = dronePos(p, i), t = findTarget(dx, dy, 150);
         if (!t) continue;
         const q = tpos(t), a = angleTo(dx, dy, q.x, q.y);
         G.bullets.push(new Bullet(dx, dy, Math.cos(a) * 190, Math.sin(a) * 190, 'player', p,
-          { kind: 'small', dmg: L >= 2 ? 1 : 0.5, breaks: false, col: '#7cd8fc', life: 1.2 }));
+          { kind: 'small', dmg: L >= 4 ? 1.5 : L >= 2 ? 1 : 0.5, breaks: false, col: '#7cd8fc', life: 1.2 }));
       }
     }
   }
   // отвал-таран
   if (lv('ram')) {
-    const L = lv('ram'), dmg = [0, 2, 3, 4][L], fr = frontStrip(p, 3);
+    const L = lv('ram'), dmg = [0, 2, 3, 4, 5, 6][L], fr = frontStrip(p, 3);
+    if (L >= 4) { const r = G.level.destroyRect(fr[0], fr[1], fr[2], fr[3], L >= 5); if (r.brick || r.steel) Sound.play('brick'); } // пролом: 4 — кирпич, 5 — и сталь
     for (const e of G.enemies) {
       if (!e.alive || e.ramCd > 0 || !overlap(fr[0], fr[1], fr[2], fr[3], e.x, e.y, 16, 16)) continue;
       e.ramCd = 0.5;
       e.takeHit(dmg, p);
-      if (e.alive) e.push(p.dir, [0, 12, 16, 20][L]);
+      if (e.alive) { e.push(p.dir, [0, 12, 16, 20, 24, 28][L]); if (L >= 5) e.stun = Math.max(e.stun, 1); }
       ramSparks(fr); G.shake = Math.max(G.shake, 2);
     }
     A.ramBoss -= dt;
@@ -380,13 +383,13 @@ function updateAux(p, dt) {
       if (bossLive()) { const a = bossAim(), d = dist(p.cx, p.cy, a.x, a.y); if (d > 40 && d < 280) list.push({ x: a.x, y: a.y, d: d - 60 - mk(G.boss.mark), m: mk(G.boss.mark) }); }
       if (!list.length) A.mortCd = 0.4;
       else {
-        A.mortCd = [0, 3.2, 2.8, 2.4][L];
+        A.mortCd = [0, 3.2, 2.8, 2.4, 2.1, 1.8][L];
         list.sort((a, b) => a.d - b.d);
         const marked = list.filter(q => q.m).length, n = marked ? L * 2 : L, k = marked || list.length; // двойной залп — только по помеченным
         for (let i = 0; i < n; i++) {
           const q = list[i % k], spr = i >= k ? 12 : 0; // целей меньше, чем мин — кладём рядом
           G.mortars.push(new Mortar(p.cx, p.cy, clamp(q.x + rand(-spr, spr), 4, FW - 4), clamp(q.y + rand(-spr, spr), 4, FH - 4), 0.85 + i * 0.12,
-            { r: L >= 3 ? 18 : 15, h: 46, dmg: 2, by: p, col: '#3c3c3c' }));
+            { r: L >= 5 ? 22 : L >= 3 ? 18 : 15, h: 46, dmg: L >= 5 ? 3 : 2, by: p, col: '#3c3c3c' }));
         }
         Sound.play('mortar');
       }
@@ -469,7 +472,7 @@ function drawDrones(p, g) {
   const L = p.perks.drone || 0;
   if (!L || p.dead) return;
   const f = (G.time * 30 | 0) % 2;
-  for (let i = 0; i < (L >= 3 ? 2 : 1); i++) {
+  for (let i = 0; i < droneN(p); i++) {
     const [dx, dy] = dronePos(p, i), x = Math.round(dx), y = Math.round(dy);
     g.globalAlpha = 0.35; rect(g, x - 2, y + 6, 5, 2, '#000'); g.globalAlpha = 1;
     rect(g, x - 1, y - 1, 3, 3, '#bcbcbc');

@@ -11,59 +11,65 @@ const TAL_BRANCHES = [
   { name: 'ОГОНЬ', cls: 'assault', col: '#fca044' },
   { name: 'ТЕХНИКА', cls: 'scout', col: '#3cbcfc' },
 ];
-const TAL_GATES = [0, 3, 8, 16, 28, 45, 65, 90];
+const TAL_GATES = [0, 3, 5, 8, 16, 28, 45, 65, 90, 120];
 // kind: gen — общий, cls — спецприём класса, start — стартовая карта, pick — выбор карты на старте, super — суперсинергия
 const TALENTS = {
   // ---------- БРОНЯ (тяжёлый, щит) ----------
   hp: { b: 0, t: 0, cost: [2, 3, 4], icon: '♥+', name: 'ТОЛСТАЯ БРОНЯ', desc: '+1 К МАКС. ПРОЧНОСТИ ЗА УРОВЕНЬ' },
   field: { b: 0, t: 1, cost: [4], icon: '+♥', name: 'ПОЛЕВОЙ РЕМОНТ', desc: '+1 ПРОЧНОСТЬ ПОСЛЕ КАЖДОГО СЕКТОРА' },
+  reactive: { b: 0, t: 2, cost: [4], icon: '♥*', name: 'РЕАКТИВНАЯ БРОНЯ', desc: 'ПРИ ПОПАДАНИИ БРОНЯ ВЗРЫВАЕТСЯ: 2 УРОНА И ОТБРОС ВРАГОВ РЯДОМ. РАЗ В 4 С', pv: 'ВЗРЫВ: 2 УРОНА ВОКРУГ' },
   shDur: { b: 0, t: 1, cost: [4], icon: '()+', cls: 'heavy', name: 'ДОЛГИЙ ЩИТ', desc: 'ЩИТ ДЕРЖИТСЯ 4 С ВМЕСТО 3', pv: 'ЩИТ: 3 С → 4 С' },
-  helmet: { b: 0, t: 2, cost: [6], icon: '@helmet', name: 'КАСКА', desc: 'В НАЧАЛЕ СЕКТОРА 6 С НЕУЯЗВИМОСТИ ВМЕСТО 2.5', pv: 'НЕУЯЗВИМОСТЬ: 2.5 С → 6 С' },
-  shCd: { b: 0, t: 2, cost: [6], icon: '()%', cls: 'heavy', name: 'БЫСТРЫЙ ЩИТ', desc: 'ЩИТ ПЕРЕЗАРЯЖАЕТСЯ НА 20% БЫСТРЕЕ', pv: 'ПЕРЕЗАРЯДКА: 12 С → 9.6 С' },
-  stEshield: { b: 0, t: 3, cost: [10], icon: '()', kind: 'start', card: 'eshield', name: 'ЭНЕРГОЩИТ НА СТАРТЕ', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С КАРТОЙ ЭНЕРГОЩИТ' },
-  shDmg: { b: 0, t: 3, cost: [10], icon: '()×', cls: 'heavy', name: 'ЖЁСТКИЙ ОТСКОК', desc: 'ОТРАЖЁННЫЕ ЩИТОМ СНАРЯДЫ БЬЮТ ×2', pv: 'УРОН ОТРАЖЕНИЯ: ×2' },
-  second: { b: 0, t: 4, cost: [12], icon: '♥!', name: 'ВТОРОЙ ШАНС', desc: 'РАЗ ЗА ЗАБЕГ ВМЕСТО ГИБЕЛИ ТАНК ВСТАЁТ С ПОЛОВИНОЙ ПРОЧНОСТИ' },
-  shWide: { b: 0, t: 4, cost: [12], icon: '(◆)', cls: 'heavy', name: 'ШИРОКИЙ ЩИТ', desc: 'ЩИТ В 1.6 РАЗА БОЛЬШЕ И ПРИКРЫВАЕТ НАПАРНИКОВ РЯДОМ', pv: 'РАДИУС ЩИТА: ×1.6' },
-  stVamp: { b: 0, t: 5, cost: [16], icon: '×♥', kind: 'start', card: 'vamp', name: 'ТРОФЕЙНЫЙ РЕМОНТ НА СТАРТЕ', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С КАРТОЙ ТРОФЕЙНЫЙ РЕМОНТ' },
-  shWave: { b: 0, t: 5, cost: [16], icon: '()*', cls: 'heavy', name: 'УДАРНАЯ ВОЛНА', desc: 'ВКЛЮЧЕНИЕ ЩИТА БЬЁТ И ОТБРАСЫВАЕТ ВРАГОВ РЯДОМ', pv: 'ВОЛНА: 2 УРОНА ВОКРУГ' },
-  scorch: { b: 0, t: 6, cost: [20], kind: 'super', perk: 'scorch' },
-  emerg: { b: 0, t: 6, cost: [20], icon: '♥1', name: 'АВАРИЙНЫЙ РЕМОНТ', desc: 'ПРИ 1 ПРОЧНОСТИ - 3 С НЕУЯЗВИМОСТИ, РАЗ ЗА СЕКТОР' },
-  chain: { b: 0, t: 7, cost: [26], kind: 'super', perk: 'chain' },
-  fort: { b: 0, t: 7, cost: [26], icon: '()2', cls: 'heavy', name: 'КРЕПОСТЬ', desc: 'ЩИТ НАКАПЛИВАЕТ 2 ЗАРЯДА', pv: 'ЗАРЯДОВ ЩИТА: 1 → 2' },
+  helmet: { b: 0, t: 3, cost: [6], icon: '@helmet', name: 'КАСКА', desc: 'В НАЧАЛЕ СЕКТОРА 6 С НЕУЯЗВИМОСТИ ВМЕСТО 2.5', pv: 'НЕУЯЗВИМОСТЬ: 2.5 С → 6 С' },
+  shCd: { b: 0, t: 3, cost: [6], icon: '()%', cls: 'heavy', name: 'БЫСТРЫЙ ЩИТ', desc: 'ЩИТ ПЕРЕЗАРЯЖАЕТСЯ НА 20% БЫСТРЕЕ', pv: 'ПЕРЕЗАРЯДКА: 12 С → 9.6 С' },
+  stEshield: { b: 0, t: 4, cost: [10], icon: '()', kind: 'start', card: 'eshield', name: 'ЭНЕРГОЩИТ НА СТАРТЕ', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С КАРТОЙ ЭНЕРГОЩИТ' },
+  shDmg: { b: 0, t: 4, cost: [10], icon: '()×', cls: 'heavy', name: 'ЖЁСТКИЙ ОТСКОК', desc: 'ОТРАЖЁННЫЕ ЩИТОМ СНАРЯДЫ БЬЮТ ×2', pv: 'УРОН ОТРАЖЕНИЯ: ×2' },
+  second: { b: 0, t: 5, cost: [12], icon: '♥!', name: 'ВТОРОЙ ШАНС', desc: 'РАЗ ЗА ЗАБЕГ ВМЕСТО ГИБЕЛИ ТАНК ВСТАЁТ С ПОЛОВИНОЙ ПРОЧНОСТИ' },
+  shWide: { b: 0, t: 5, cost: [12], icon: '(◆)', cls: 'heavy', name: 'ШИРОКИЙ ЩИТ', desc: 'ЩИТ В 1.6 РАЗА БОЛЬШЕ И ПРИКРЫВАЕТ НАПАРНИКОВ РЯДОМ', pv: 'РАДИУС ЩИТА: ×1.6' },
+  stVamp: { b: 0, t: 6, cost: [16], icon: '×♥', kind: 'start', card: 'vamp', name: 'ТРОФЕЙНЫЙ РЕМОНТ НА СТАРТЕ', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С КАРТОЙ ТРОФЕЙНЫЙ РЕМОНТ' },
+  shWave: { b: 0, t: 6, cost: [16], icon: '()*', cls: 'heavy', name: 'УДАРНАЯ ВОЛНА', desc: 'ВКЛЮЧЕНИЕ ЩИТА БЬЁТ И ОТБРАСЫВАЕТ ВРАГОВ РЯДОМ', pv: 'ВОЛНА: 2 УРОНА ВОКРУГ' },
+  scorch: { b: 0, t: 7, cost: [20], kind: 'super', perk: 'scorch' },
+  emerg: { b: 0, t: 7, cost: [20], icon: '♥1', name: 'АВАРИЙНЫЙ РЕМОНТ', desc: 'ПРИ 1 ПРОЧНОСТИ - 3 С НЕУЯЗВИМОСТИ, РАЗ ЗА СЕКТОР' },
+  chain: { b: 0, t: 8, cost: [26], kind: 'super', perk: 'chain' },
+  colossus: { b: 0, t: 9, cost: [30], icon: '♥♥', name: 'КОЛОСС', desc: 'ЗА КАЖДЫЕ 15 УБИЙСТВ +1 К МАКС. ПРОЧНОСТИ (ДО +5). ЛЁГКИХ И БЫСТРЫХ ВРАГОВ ДАВИТ ГУСЕНИЦАМИ', pv: 'ДО +5 ♥ ЗА ЗАБЕГ' },
+  fort: { b: 0, t: 8, cost: [26], icon: '()2', cls: 'heavy', name: 'КРЕПОСТЬ', desc: 'ЩИТ НАКАПЛИВАЕТ 2 ЗАРЯДА', pv: 'ЗАРЯДОВ ЩИТА: 1 → 2' },
 
   // ---------- ОГНЕВАЯ МОЩЬ (штурмовик, залп) ----------
   rof: { b: 1, t: 0, cost: [2, 3, 4], icon: '>>', name: 'СКОРОСТРЕЛЬНОСТЬ', desc: 'ПЕРЕЗАРЯДКА ОРУДИЯ БЫСТРЕЕ НА 8% ЗА УРОВЕНЬ' },
   vel: { b: 1, t: 1, cost: [4], icon: '→', name: 'ДЛИННЫЙ СТВОЛ', desc: 'СНАРЯДЫ ЛЕТЯТ НА 15% БЫСТРЕЕ' },
+  smith: { b: 1, t: 2, cost: [4], icon: '10', name: 'ОРУЖЕЙНИК', desc: 'ЗВЁЗДЫ КАЧАЮТ ОРУЖИЕ ДО 10 УРОВНЯ ВМЕСТО 5', pv: 'ОРУЖИЕ: МАКС. 5 → 10' },
   vlMore: { b: 1, t: 1, cost: [4], icon: '*+', cls: 'assault', name: 'ПЛОТНЫЙ ЗАЛП', desc: 'ЗАЛП ВЫПУСКАЕТ 20 СНАРЯДОВ ВМЕСТО 16', pv: 'СНАРЯДОВ: 16 → 20' },
-  star: { b: 1, t: 2, cost: [6], icon: '@star', name: 'ПЕРВАЯ ЗВЕЗДА', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С 1 ЗВЕЗДОЙ ОРУЖИЯ', pv: 'ОРУЖИЕ: УР. 0 → УР. 1' },
-  vlCd: { b: 1, t: 2, cost: [6], icon: '*%', cls: 'assault', name: 'БЫСТРЫЙ ЗАЛП', desc: 'ЗАЛП ПЕРЕЗАРЯЖАЕТСЯ НА 20% БЫСТРЕЕ', pv: 'ПЕРЕЗАРЯДКА: 9 С → 7.2 С' },
-  stShotgun: { b: 1, t: 3, cost: [10], icon: '\\|/', kind: 'start', card: 'shotgun', name: 'ДРОБОВИК НА СТАРТЕ', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С КАРТОЙ ДРОБОВИК' },
-  vlDouble: { b: 1, t: 3, cost: [10], icon: '**', cls: 'assault', name: 'ДВОЙНОЙ ЗАЛП', desc: 'ЧЕРЕЗ 0.3 С ЗАЛП ПОВТОРЯЕТСЯ', pv: 'ЗАЛПОВ: 1 → 2' },
-  elems: { b: 1, t: 4, cost: [12], icon: '♨❄', name: 'ЗНАТОК СТИХИЙ', desc: 'КАРТЫ СТИХИЙ ВЫПАДАЮТ ВДВОЕ ЧАЩЕ', pv: 'ШАНС СТИХИЙ: ×2' },
-  vlDrill: { b: 1, t: 4, cost: [12], icon: '*#', cls: 'assault', name: 'ПРОБИВНОЙ ЗАЛП', desc: 'СНАРЯДЫ ЗАЛПА ПРОХОДЯТ СКВОЗЬ КИРПИЧ', pv: 'СКВОЗЬ 2 СТЕНЫ' },
-  stElem: { b: 1, t: 5, cost: [16], icon: '♨?', kind: 'pick', cards: ['inc', 'cryo', 'tesla', 'mark'], name: 'СТИХИЯ НА СТАРТЕ', desc: 'В НАЧАЛЕ ЗАБЕГА - ВЫБОР ОДНОЙ ИЗ 4 СТИХИЙ' },
-  vlHome: { b: 1, t: 5, cost: [16], icon: '*⌖', cls: 'assault', name: 'УМНЫЙ ЗАЛП', desc: 'СНАРЯДЫ ЗАЛПА НАВОДЯТСЯ НА ВРАГОВ', pv: 'НАВЕДЕНИЕ ЗАЛПА' },
-  ion: { b: 1, t: 6, cost: [20], kind: 'super', perk: 'ion' },
-  abszero: { b: 1, t: 6, cost: [20], kind: 'super', perk: 'abszero' },
-  thunder: { b: 1, t: 7, cost: [26], kind: 'super', perk: 'thunder' },
-  stDamage: { b: 1, t: 7, cost: [26], icon: '+1', kind: 'start', card: 'damage', name: 'КРУПНЫЙ КАЛИБР НА СТАРТЕ', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С КАРТОЙ КРУПНЫЙ КАЛИБР' },
+  star: { b: 1, t: 3, cost: [6], icon: '@star', name: 'ПЕРВАЯ ЗВЕЗДА', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С 1 ЗВЕЗДОЙ ОРУЖИЯ', pv: 'ОРУЖИЕ: УР. 0 → УР. 1' },
+  vlCd: { b: 1, t: 3, cost: [6], icon: '*%', cls: 'assault', name: 'БЫСТРЫЙ ЗАЛП', desc: 'ЗАЛП ПЕРЕЗАРЯЖАЕТСЯ НА 20% БЫСТРЕЕ', pv: 'ПЕРЕЗАРЯДКА: 9 С → 7.2 С' },
+  stShotgun: { b: 1, t: 4, cost: [10], icon: '\\|/', kind: 'start', card: 'shotgun', name: 'ДРОБОВИК НА СТАРТЕ', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С КАРТОЙ ДРОБОВИК' },
+  vlDouble: { b: 1, t: 4, cost: [10], icon: '**', cls: 'assault', name: 'ДВОЙНОЙ ЗАЛП', desc: 'ЧЕРЕЗ 0.3 С ЗАЛП ПОВТОРЯЕТСЯ', pv: 'ЗАЛПОВ: 1 → 2' },
+  elems: { b: 1, t: 5, cost: [12], icon: '♨❄', name: 'ЗНАТОК СТИХИЙ', desc: 'КАРТЫ СТИХИЙ ВЫПАДАЮТ ВДВОЕ ЧАЩЕ', pv: 'ШАНС СТИХИЙ: ×2' },
+  vlDrill: { b: 1, t: 5, cost: [12], icon: '*#', cls: 'assault', name: 'ПРОБИВНОЙ ЗАЛП', desc: 'СНАРЯДЫ ЗАЛПА ПРОХОДЯТ СКВОЗЬ КИРПИЧ', pv: 'СКВОЗЬ 2 СТЕНЫ' },
+  stElem: { b: 1, t: 6, cost: [16], icon: '♨?', kind: 'pick', cards: ['inc', 'cryo', 'tesla', 'mark'], name: 'СТИХИЯ НА СТАРТЕ', desc: 'В НАЧАЛЕ ЗАБЕГА - ВЫБОР ОДНОЙ ИЗ 4 СТИХИЙ' },
+  vlHome: { b: 1, t: 6, cost: [16], icon: '*⌖', cls: 'assault', name: 'УМНЫЙ ЗАЛП', desc: 'СНАРЯДЫ ЗАЛПА НАВОДЯТСЯ НА ВРАГОВ', pv: 'НАВЕДЕНИЕ ЗАЛПА' },
+  ion: { b: 1, t: 7, cost: [20], kind: 'super', perk: 'ion' },
+  abszero: { b: 1, t: 7, cost: [20], kind: 'super', perk: 'abszero' },
+  thunder: { b: 1, t: 8, cost: [26], kind: 'super', perk: 'thunder' },
+  legend: { b: 1, t: 9, cost: [30], icon: '15', need: 'smith', name: 'ЛЕГЕНДА', desc: 'ЗВЁЗДЫ КАЧАЮТ ОРУЖИЕ ДО 15 УРОВНЯ: СКОРОСТРЕЛЬНОСТЬ, УРОН, ПРОБИТИЕ', pv: 'ОРУЖИЕ: МАКС. 10 → 15' },
+  stDamage: { b: 1, t: 8, cost: [26], icon: '+1', kind: 'start', card: 'damage', name: 'КРУПНЫЙ КАЛИБР НА СТАРТЕ', desc: 'ЗАБЕГ НАЧИНАЕТСЯ С КАРТОЙ КРУПНЫЙ КАЛИБР' },
 
   // ---------- ТЕХНИКА (разведчик, рывок) ----------
   spd: { b: 2, t: 0, cost: [2, 3, 4], icon: '=>', name: 'ФОРСАЖ', desc: 'СКОРОСТЬ ХОДА +5% ЗА УРОВЕНЬ' },
   cd: { b: 2, t: 1, cost: [4], icon: '%', name: 'ВЫУЧКА', desc: 'СПЕЦПРИЁМ ЛЮБОГО КЛАССА ПЕРЕЗАРЯЖАЕТСЯ НА 10% БЫСТРЕЕ' },
+  constr: { b: 2, t: 2, cost: [4], icon: '≡4', name: 'КОНСТРУКТОР', desc: 'ДОП. СИСТЕМЫ КАЧАЮТСЯ ДО 4 УРОВНЯ', pv: 'СИСТЕМЫ: МАКС. УР. 3 → 4' },
   dsLong: { b: 2, t: 1, cost: [4], icon: '→→', cls: 'scout', name: 'ДАЛЬНИЙ РЫВОК', desc: 'РЫВОК ДЛИННЕЕ НА 30%', pv: 'ДЛИНА РЫВКА: ×1.3' },
-  luck: { b: 2, t: 2, cost: [6], icon: '?', name: 'ТРОФЕЙЩИК', desc: 'БОНУСЫ ИЗ ВРАГОВ ВЫПАДАЮТ НА 25% ЧАЩЕ', pv: 'ШАНС БОНУСА: ×1.25' },
-  dsCd: { b: 2, t: 2, cost: [6], icon: '→%', cls: 'scout', name: 'БЫСТРЫЙ РЫВОК', desc: 'РЫВОК ПЕРЕЗАРЯЖАЕТСЯ НА 20% БЫСТРЕЕ', pv: 'ПЕРЕЗАРЯДКА: 4 С → 3.2 С' },
-  stAux: { b: 2, t: 3, cost: [10], icon: '≡?', kind: 'pick', cards: 'aux', name: 'СИСТЕМА НА СТАРТЕ', desc: 'В НАЧАЛЕ ЗАБЕГА - ВЫБОР ДОП. СИСТЕМЫ 1 УРОВНЯ' },
-  dsTwo: { b: 2, t: 3, cost: [10], icon: '→2', cls: 'scout', name: 'ДВОЙНОЙ РЫВОК', desc: 'РЫВОК НАКАПЛИВАЕТ 2 ЗАРЯДА', pv: 'ЗАРЯДОВ РЫВКА: 1 → 2' },
-  cards: { b: 2, t: 4, cost: [12], icon: '[+]', name: 'ШИРОКИЙ ВЫБОР', desc: '+1 КАРТА ПРИ ВЫБОРЕ УЛУЧШЕНИЯ', pv: 'КАРТ: 3 → 4' },
-  dsZap: { b: 2, t: 4, cost: [12], icon: '→⚡', cls: 'scout', name: 'ГРОЗОВОЙ РЫВОК', desc: 'ВО ВРЕМЯ РЫВКА МОЛНИИ БЬЮТ ВРАГОВ РЯДОМ', pv: 'МОЛНИИ НА РЫВКЕ' },
-  reroll: { b: 2, t: 5, cost: [16], icon: '?!', name: 'ПЕРЕСДАЧА', desc: 'РАЗ ЗА СЕКТОР МОЖНО ПЕРЕБРОСИТЬ КАРТЫ УЛУЧШЕНИЙ (СПЕЦ)' },
-  dsBuff: { b: 2, t: 5, cost: [16], icon: '→+', cls: 'scout', name: 'АДРЕНАЛИН', desc: 'ПОСЛЕ РЫВКА 2 С ОРУДИЕ БЬЁТ ×2', pv: 'УРОН ПОСЛЕ РЫВКА: ×2' },
-  carpet: { b: 2, t: 6, cost: [20], kind: 'super', perk: 'carpet' },
-  whirl: { b: 2, t: 6, cost: [20], kind: 'super', perk: 'whirl' },
-  slot3: { b: 2, t: 7, cost: [26], icon: '≡3', name: 'ТРЕТИЙ СЛОТ', desc: 'МОЖНО ПОСТАВИТЬ 3 ДОП. СИСТЕМЫ ВМЕСТО 2', pv: 'СЛОТОВ СИСТЕМ: 2 → 3' },
-  dsBreak: { b: 2, t: 7, cost: [26], icon: '→#', cls: 'scout', name: 'ТАРАН-ПРОЛОМ', desc: 'РЫВОК ЛОМАЕТ КИРПИЧ И СТАЛЬ', pv: 'РЫВОК СКВОЗЬ СТЕНЫ' },
+  luck: { b: 2, t: 3, cost: [6], icon: '?', name: 'ТРОФЕЙЩИК', desc: 'БОНУСЫ ИЗ ВРАГОВ ВЫПАДАЮТ НА 25% ЧАЩЕ', pv: 'ШАНС БОНУСА: ×1.25' },
+  dsCd: { b: 2, t: 3, cost: [6], icon: '→%', cls: 'scout', name: 'БЫСТРЫЙ РЫВОК', desc: 'РЫВОК ПЕРЕЗАРЯЖАЕТСЯ НА 20% БЫСТРЕЕ', pv: 'ПЕРЕЗАРЯДКА: 4 С → 3.2 С' },
+  stAux: { b: 2, t: 4, cost: [10], icon: '≡?', kind: 'pick', cards: 'aux', name: 'СИСТЕМА НА СТАРТЕ', desc: 'В НАЧАЛЕ ЗАБЕГА - ВЫБОР ДОП. СИСТЕМЫ 1 УРОВНЯ' },
+  dsTwo: { b: 2, t: 4, cost: [10], icon: '→2', cls: 'scout', name: 'ДВОЙНОЙ РЫВОК', desc: 'РЫВОК НАКАПЛИВАЕТ 2 ЗАРЯДА', pv: 'ЗАРЯДОВ РЫВКА: 1 → 2' },
+  cards: { b: 2, t: 5, cost: [12], icon: '[+]', name: 'ШИРОКИЙ ВЫБОР', desc: '+1 КАРТА ПРИ ВЫБОРЕ УЛУЧШЕНИЯ', pv: 'КАРТ: 3 → 4' },
+  dsZap: { b: 2, t: 5, cost: [12], icon: '→⚡', cls: 'scout', name: 'ГРОЗОВОЙ РЫВОК', desc: 'ВО ВРЕМЯ РЫВКА МОЛНИИ БЬЮТ ВРАГОВ РЯДОМ', pv: 'МОЛНИИ НА РЫВКЕ' },
+  reroll: { b: 2, t: 6, cost: [16], icon: '?!', name: 'ПЕРЕСДАЧА', desc: 'РАЗ ЗА СЕКТОР МОЖНО ПЕРЕБРОСИТЬ КАРТЫ УЛУЧШЕНИЙ (СПЕЦ)' },
+  dsBuff: { b: 2, t: 6, cost: [16], icon: '→+', cls: 'scout', name: 'АДРЕНАЛИН', desc: 'ПОСЛЕ РЫВКА 2 С ОРУДИЕ БЬЁТ ×2', pv: 'УРОН ПОСЛЕ РЫВКА: ×2' },
+  carpet: { b: 2, t: 7, cost: [20], kind: 'super', perk: 'carpet' },
+  whirl: { b: 2, t: 7, cost: [20], kind: 'super', perk: 'whirl' },
+  slot3: { b: 2, t: 8, cost: [26], icon: '≡3', name: 'ТРЕТИЙ СЛОТ', desc: 'МОЖНО ПОСТАВИТЬ 3 ДОП. СИСТЕМЫ ВМЕСТО 2', pv: 'СЛОТОВ СИСТЕМ: 2 → 3' },
+  engineer: { b: 2, t: 9, cost: [30], icon: '≡5', need: 'constr', name: 'ГЛАВНЫЙ ИНЖЕНЕР', desc: 'ДОП. СИСТЕМЫ КАЧАЮТСЯ ДО 5 УРОВНЯ', pv: 'СИСТЕМЫ: МАКС. УР. 4 → 5' },
+  dsBreak: { b: 2, t: 8, cost: [26], icon: '→#', cls: 'scout', name: 'ТАРАН-ПРОЛОМ', desc: 'РЫВОК ЛОМАЕТ КИРПИЧ И СТАЛЬ', pv: 'РЫВОК СКВОЗЬ СТЕНЫ' },
 };
 for (const id in TALENTS) {
   const T = TALENTS[id];
@@ -86,6 +92,8 @@ const talIcon = T => T.perk ? PERKS[T.perk].icon : T.icon;
 // ---------- хранилище: медали и уровни талантов ----------
 const Talents = {
   data: Store.get('tanks_talents', { medals: 0, lv: {} }),
+  // gift — талант, выданный бесплатно (при возврате медали не начисляются и в пороги ярусов он не идёт)
+  rankCost(id, i) { return i === 0 && this.data.gift === id ? 0 : TALENTS[id].cost[i]; },
   save() { Store.set('tanks_talents', this.data); },
   lv(id) { return this.data.lv[id] || 0; },
   get medals() { return this.data.medals; },
@@ -97,7 +105,7 @@ const Talents = {
       const T = TALENTS[id];
       if (T.b !== b || T.t >= tier) continue;
       const n = this.lv(id) - (except && except.id === id ? 1 : 0);
-      for (let i = 0; i < n; i++) s += T.cost[i];
+      for (let i = 0; i < n; i++) s += this.rankCost(id, i);
     }
     return s;
   },
@@ -108,6 +116,7 @@ const Talents = {
     const T = TALENTS[id], l = this.lv(id);
     if (l >= T.cost.length) return 'ИЗУЧЕНО';
     if (!this.open(id)) return 'ЗАКРЫТО';
+    if (T.need && !this.lv(T.need)) return 'НУЖЕН ТАЛАНТ';
     if (this.medals < T.cost[l]) return 'МАЛО МЕДАЛЕЙ';
     return '';
   },
@@ -123,6 +132,7 @@ const Talents = {
   canRefund(id) {
     const T = TALENTS[id];
     if (!this.lv(id)) return false;
+    if (TAL_LIST.some(k => TALENTS[k].need === id && this.lv(k))) return false;
     for (const k of TAL_LIST) {
       const U = TALENTS[k];
       if (U.b !== T.b || U.t <= T.t || !this.lv(k)) continue;
@@ -133,7 +143,8 @@ const Talents = {
   refund(id) {
     if (!this.canRefund(id)) return false;
     const l = this.lv(id);
-    this.data.medals += TALENTS[id].cost[l - 1];
+    this.data.medals += this.rankCost(id, l - 1);
+    if (l === 1 && this.data.gift === id) delete this.data.gift;
     if (l > 1) this.data.lv[id] = l - 1; else delete this.data.lv[id];
     this.save();
     return true;
@@ -144,6 +155,14 @@ function talOf(p, id) { const T = TALENTS[id]; return T.cls && T.cls !== p.cls ?
 // мифическая карта доступна в игре, только если её суперсинергия изучена
 const perkAllowed = id => !PERKS[id].myth || Talents.lv(id) > 0;
 const auxMax = () => 2 + (Talents.lv('slot3') ? 1 : 0);
+// предел уровня доп. систем: 3, «Конструктор» — 4, «Главный инженер» — 5
+const auxLvMax = () => 3 + (Talents.lv('constr') ? 1 : 0) + (Talents.lv('engineer') ? 1 : 0);
+// обновление: предел оружия без талантов стал 5 — кто уже играл, получает «Оружейника» (предел 10) бесплатно
+if (!Talents.data.v) {
+  const d = Talents.data;
+  if ((d.medals || Object.keys(d.lv).length || Store.get('tanks_rogue_best', { depth: 0 }).depth) && !d.lv.smith) { d.lv.smith = 1; d.gift = 'smith'; }
+  d.v = 2; Talents.save();
+}
 
 // ---------- применение к забегу ----------
 // бесплатные стартовые бонусы помечаются в p.base, чтобы не усиливать врагов (teamPower)
@@ -153,7 +172,7 @@ function applyTalents(p) {
     const T = TALENTS[id];
     if (T.kind === 'start' && Talents.lv(id) && !p.perks[T.card]) { p.perks[T.card] = 1; p.base[T.card] = 1; if (PERKS[T.card].onPick) PERKS[T.card].onPick(p); }
   }
-  p.weapon = p.baseWeapon = Talents.lv('star');
+  p.weapon = p.baseWeapon = Math.min(Talents.lv('star'), p.maxWeapon);
   p.charges = p.maxCh;
   p.recalc();
 }
@@ -183,7 +202,7 @@ function startPicks() {
 function sectorMedals(info) { return 1 + (info.boss ? 3 : 0) + (info.final ? 5 : 0); }
 
 // ---------- экран талантов ----------
-const TT = { x0: 22, bw: 56, gap: 4, y0: 46, rh: 22, nw: 24, nh: 16, px: 204, py: 24, pw: 178, ph: 206 };
+const TT = { x0: 22, bw: 56, gap: 4, y0: 44, rh: 20, nw: 24, nh: 16, px: 204, py: 24, pw: 178, ph: 206 };
 // положение узла на экране
 function talRect(id) {
   const T = TALENTS[id], bx = TT.x0 + T.b * (TT.bw + TT.gap), y = TT.y0 + T.t * TT.rh;
@@ -306,6 +325,7 @@ function drawTalPreview(T) {
   let msg, col;
   if (why === 'ИЗУЧЕНО') { msg = 'ИЗУЧЕНО'; col = '#58d854'; }
   else if (why === 'ЗАКРЫТО') { msg = tr('НУЖНО ВЛОЖИТЬ В ВЕТКУ') + ' ✪' + TAL_GATES[T.t]; col = '#f87878'; }
+  else if (why === 'НУЖЕН ТАЛАНТ') { msg = tr('СНАЧАЛА:') + ' ' + tr(talName(TALENTS[T.need])); col = '#f87878'; }
   else { msg = tr('ЦЕНА:') + ' ✪' + T.cost[l] + (max > 1 ? '  ' + tr('УР.') + ' ' + (l + 1) + '/' + max : ''); col = why ? '#f87878' : '#fcd820'; }
   text(msg, cx, py + ph - 26, col, 1, 'center');
   if (G.tal.warn > 0) text('СНАЧАЛА ВЕРНИТЕ ТАЛАНТЫ ВЫШЕ', cx, py + ph - 14, '#f87878', 1, 'center');

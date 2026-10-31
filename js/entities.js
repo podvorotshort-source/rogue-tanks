@@ -446,7 +446,7 @@ const CLASSES = {
     sname: 'ЩИТ', sdesc: 'НА 3 СЕК. ОТРАЖАЕТ СНАРЯДЫ', stats: [6, 2, 2, 4] },
 };
 const CLASS_LIST = ['assault', 'scout', 'heavy'];
-const MAX_WEAPON = 10;
+const MAX_WEAPON = 15; // предел без талантов — 5, «Оружейник» — 10, «Легенда» — 15
 
 class Player extends Tank {
   constructor(idx, cls, ctrl, colorIdx) {
@@ -463,13 +463,15 @@ class Player extends Tank {
     this.aux = newAuxState(); this.lastShot = -10;
     // таланты: base — бесплатные стартовые карты, заряды спецприёма, «Второй шанс», «Аварийный ремонт», «Адреналин»
     this.base = {}; this.baseWeapon = 0; this.charges = 1; this.secondUsed = false; this.emergUsed = false; this.adren = 0; this.dzT = 0;
+    this.reactT = -9; this.colN = 0; this.colHp = 0; // «Реактивная броня», «Колосс»
     this.recalc();
   }
   tal(id) { return talOf(this, id); }
   get maxCh() { return this.tal('fort') || this.tal('dsTwo') ? 2 : 1; }
   get shieldR() { return this.tal('shWide') ? 27 : 17; }
   get color() { return PLAYER_PALS[this.colorIdx].ui; }
-  get look() { return Math.floor(this.weapon / 2); } // внешний вид растёт каждые 2 звезды
+  get look() { return this.weapon; } // каждая звезда добавляет танку деталь
+  get maxWeapon() { return 5 + (Talents.lv('smith') ? 5 : 0) + (Talents.lv('legend') ? 5 : 0); }
   get label() { return (this.idx + 1) + 'P'; }
   recalc() {
     const C = CLASSES[this.cls];
@@ -477,7 +479,7 @@ class Player extends Tank {
       spread: false, explosive: 0, cdMul: 1, luck: 1, eshield: false, vamp: false, fieldRepair: 0, fx: null, pellets: 3 };
     for (const id in this.perks) for (let i = 0; i < this.perks[id]; i++) if (PERKS[id].apply) PERKS[id].apply(s);
     talentStats(this, s);
-    // уровни оружия от звёзд (общие для команды, до MAX_WEAPON); сталь звёзды не пробивают — для этого карта «Бронебойные»
+    // уровни оружия от звёзд (общие для команды, до maxWeapon); сталь звёзды не пробивают — для этого карта «Бронебойные»
     if (this.weapon >= 1) s.bspeed *= 1.3;
     if (this.weapon >= 2) s.maxB += 1;
     if (this.weapon >= 3) s.reload *= 0.9;
@@ -488,6 +490,11 @@ class Player extends Tank {
     if (this.weapon >= 8) s.pierce += 1;
     if (this.weapon >= 9) s.reload *= 0.85;
     if (this.weapon >= 10) s.dmg += 1;
+    if (this.weapon >= 11) s.reload *= 0.9;
+    if (this.weapon >= 12) { s.maxB += 1; s.bspeed *= 1.1; }
+    if (this.weapon >= 13) s.dmg += 1;
+    if (this.weapon >= 14) s.pierce += 1;
+    if (this.weapon >= 15) { s.dmg += 1; s.reload *= 0.85; }
     this.stats = s;
   }
   placeAt(bx, by) {
@@ -531,6 +538,7 @@ class Player extends Tank {
       if (onIce) { this.move(this.stats.speed * dt * 0.85); moving = true; } else this.slide = 0;
     }
     this.animate(dt, moving);
+    if (this.tal('colossus')) this.crush();
     if (Input.any(this.ctrl.fire)) this.tryFire();
     if (Input.hit(this.ctrl.special)) this.trySpecial();
   }
@@ -612,6 +620,28 @@ class Player extends Tank {
     if (bossLive()) { const a = bossAim(); if (dist(a.x, a.y, this.cx, this.cy) < 60) bossHit(G.boss.hitTest(a.x, a.y, 4), 2, this); }
     G.shake = Math.max(G.shake, 3);
   }
+  // «Колосс»: лёгких и быстрых врагов давит гусеницами при касании
+  crush() {
+    for (const e of G.enemies) {
+      if (!e.alive || (e.type !== 'basic' && e.type !== 'fast') || !overlap(this.x - 1, this.y - 1, 18, 18, e.x, e.y, 16, 16)) continue;
+      e.takeHit(99, this);
+      ramSparks([e.x, e.y, 16, 16]); G.shake = Math.max(G.shake, 2);
+    }
+  }
+  // «Реактивная броня»: попадание подрывает броню — урон и отброс врагов рядом
+  reactiveBlast() {
+    this.reactT = G.time;
+    G.effects.push(new Boom(this.cx, this.cy, 14, { quiet: true }), new RingFx(this.cx, this.cy, 6, 34, '#fca044', 0.3));
+    for (const e of G.enemies) {
+      if (!e.alive) continue;
+      const dx = e.cx - this.cx, dy = e.cy - this.cy;
+      if (Math.hypot(dx, dy) > 34) continue;
+      e.takeHit(2, this);
+      if (e.alive) e.push(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0), 14);
+    }
+    if (bossLive()) { const a = bossAim(); if (dist(a.x, a.y, this.cx, this.cy) < 50) bossHit(G.boss.hitTest(a.x, a.y, 4), 2, this); }
+    Sound.play('boom');
+  }
   hurt(dmg) {
     if (this.dead || this.inv > 0 || this.helmet > 0 || this.barrier > 0 || this.dashT > 0 || G.state !== 'play') return false;
     if (this.stats.eshield && this.eshieldReady) {
@@ -623,6 +653,7 @@ class Player extends Tank {
       return false;
     }
     this.hp -= dmg; this.inv = 1.2; this.flash = 0.1;
+    if (this.tal('reactive') && G.time - this.reactT >= 4) this.reactiveBlast();
     G.shake = Math.max(G.shake, 4);
     Sound.play('hurt');
     if (this.hp <= 0 && this.tal('second') && !this.secondUsed) { // «Второй шанс»
@@ -654,6 +685,10 @@ class Player extends Tank {
     G.onPlayerDeath(this);
   }
   onKill() {
+    if (this.tal('colossus') && ++this.colN % 15 === 0 && this.colHp < 5) { // «Колосс»
+      this.colHp++; this.maxHp++; this.hp++;
+      G.popups.push(new Popup(this.cx, this.y - 6, tr('КОЛОСС: +1 ♥'), '#f87878', 1.4));
+    }
     if (this.stats.vamp) {
       this.vampN++;
       if (this.vampN >= 12) { this.vampN = 0; if (this.hp < this.maxHp) { this.hp++; G.popups.push(new Popup(this.cx, this.y - 6, '+1', '#f83838')); } }
@@ -1064,7 +1099,7 @@ class Pickup {
         // звезда улучшает оружие сразу всем игрокам (и подбитому напарнику тоже)
         let upgraded = false;
         for (const q of G.players) {
-          if (q.weapon >= MAX_WEAPON) continue;
+          if (q.weapon >= q.maxWeapon) continue;
           q.weapon++; q.recalc(); upgraded = true;
           G.popups.push(new Popup(q.cx, q.y - 6, tr('ОРУЖИЕ УР.') + q.weapon, q.color, 1.4));
         }
