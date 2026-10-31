@@ -788,7 +788,7 @@ class Enemy extends Tank {
       if (type === 'basic' || type === 'power') this.maxB = 2;
       if (type === 'fast') { this.speed *= 1.25; this.fireMul *= 1.5; }
     }
-    this.think = rand(0.2, 0.8); this.blockedT = 0; this.bonus = false;
+    this.think = rand(0.2, 0.8); this.blockedT = 0; this.bonus = false; this.dodgeT = 0;
     this.artT = rand(1.5, 3); this.aim = 0; this.fuse = 0; this.flameT = 0; this.flameE = 0; this.mineT = rand(2, 4);
     this.cool = rand(0.3, 1.2);
     // статусы от улучшений игроков
@@ -837,8 +837,10 @@ class Enemy extends Tank {
     if (this.type === 'artillery' && this.updateArtillery(dt)) return;
     if (this.type === 'flamer' && this.updateFlamer(dt)) return;
     if (this.type === 'miner') this.updateMiner(dt);
-    this.think -= dt;
-    if (this.think <= 0) this.decide(false);
+    this.think -= dt; this.dodgeT -= dt;
+    let dodged = false;
+    if (this.dodgeT <= 0) { this.dodgeT = 0.15; if ((dodged = this.dodge())) this.dodgeT = 0.6; }
+    if (!dodged && this.think <= 0) this.decide(false);
     const want = this.spd() * dt, m = this.move(want);
     this.animate(dt, m > 0);
     if (m < want * 0.5) {
@@ -849,8 +851,8 @@ class Enemy extends Tank {
     if (this.cfg.fire > 0) {
       const ad = this.aligned();
       if (ad >= 0) {
-        if (ad === this.dir) { if (Math.random() < dt * 2.5 * this.fireMul) this.fire(); }
-        else if (Math.random() < dt * 1.6 * this.hunt) { this.turn(ad); this.think = rand(0.3, 0.8); }
+        if (ad === this.dir) { if (Math.random() < dt * (2.5 + 3 * this.hunt) * this.fireMul) this.fire(); }
+        else if (Math.random() < dt * 5 * this.hunt) { this.turn(ad); this.think = rand(0.25, 0.6); }
       }
       if (Math.random() < this.cfg.fire * dt * this.fireMul) this.fire();
     }
@@ -863,11 +865,37 @@ class Enemy extends Tank {
     }
     return -1;
   }
+  // увернуться от снаряда игрока, летящего прямо в танк
+  dodge() {
+    if (Math.random() > this.hunt * 0.35) return false;
+    for (const b of G.bullets) {
+      if (!b.alive || b.team !== 'player') continue;
+      const dx = this.cx - b.x, dy = this.cy - b.y;
+      if (dx * dx + dy * dy > 90 * 90) continue;
+      const v = Math.hypot(b.vx, b.vy) || 1, ux = b.vx / v, uy = b.vy / v;
+      const along = dx * ux + dy * uy, side = dx * uy - dy * ux;
+      if (along < 0 || Math.abs(side) > 9) continue;
+      // уходим поперёк полёта снаряда, в ту сторону, где он уже не заденет
+      const perp = Math.abs(ux) > Math.abs(uy) ? (side * ux >= 0 ? 0 : 2) : (side * uy >= 0 ? 1 : 3);
+      const alt = (perp + 2) % 4;
+      const d = this.free(this.x + DX[perp] * 4, this.y + DY[perp] * 4) ? perp : this.free(this.x + DX[alt] * 4, this.y + DY[alt] * 4) ? alt : -1;
+      if (d < 0) return false;
+      this.turn(d); this.think = rand(0.35, 0.6);
+      return true;
+    }
+    return false;
+  }
   decide(blocked) {
     const t = G.nearestPlayer(this.cx, this.cy);
     const r = Math.random();
     let nd = -1;
-    if (t && r < this.hunt) nd = flowDir(this, t.idx);
+    // охотник вблизи выходит на одну линию с игроком, чтобы выстрелить
+    if (t && !blocked && r < this.hunt && dist(t.cx, t.cy, this.cx, this.cy) < 150) {
+      const dx = t.cx - this.cx, dy = t.cy - this.cy;
+      const k = Math.abs(dx) < Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+      if (this.free(this.x + DX[k] * 4, this.y + DY[k] * 4)) nd = k;
+    }
+    if (nd < 0 && t && r < this.hunt) nd = flowDir(this, t.idx);
     if (nd < 0 && t && r < this.hunt + 0.3) {
       const dx = t.cx - this.cx, dy = t.cy - this.cy;
       nd = (Math.abs(dx) > Math.abs(dy)) === (Math.random() < 0.75) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
@@ -875,7 +903,7 @@ class Enemy extends Tank {
     if (nd < 0) nd = +weighted({ 0: 1, 1: 2, 2: 3, 3: 2 });
     if (blocked && nd === this.dir) nd = (this.dir + (Math.random() < 0.5 ? 1 : 3)) % 4;
     this.turn(nd);
-    this.think = rand(0.7, 2.2);
+    this.think = r < this.hunt ? rand(0.4, 1.1) : rand(0.7, 2.2);
   }
   fire() {
     if (this.cool > 0 || this.out >= this.maxB) return;

@@ -243,6 +243,7 @@ function startSector() {
   // сложность обычных врагов d: 1 → 16 к последнему одиночному боссу, дальше держится на 16
   const E = info.endless || 0, d = info.kind === 'main' ? Math.floor((G.depth - 1) * 15 / (SOLO_END - 1)) + 1 : 16;
   const extra = G.players.length - 1; // доп. игроки: +враги, +прочность боссов
+  const crew = G.players.length; // вдвоём враги и боссы вдвое крепче, втроём — втрое
   G.mod = (!info.boss && G.depth >= 2 && Math.random() < 0.45) ? pick(MODS) : null;
   const mod = G.mod ? G.mod.id : '';
   const arena = info.duo !== undefined ? DUO_BOSSES[info.duo].ids : info.bossId;
@@ -255,10 +256,11 @@ function startSector() {
   // бесконечный режим: все враги усиленные, прочность растёт с каждым сектором (+1 и +8% за сектор)
   G.enemyMods = {
     hp: (mod === 'armored' ? 1 : 0) + (firstBoss ? 0 : Math.floor(d / 6)) + (E ? 1 + E : 0),
-    hpMul: (firstBoss ? 1 : 1 + 0.04 * power) * (1 + 0.08 * E),
+    // обычные сектора: враги вдвое крепче, плюс множитель за число игроков
+    hpMul: (firstBoss ? 1 : 1 + 0.04 * power) * (1 + 0.08 * E) * crew * (info.boss ? 1 : 2),
     speed: (1 + 0.02 * d) * (E ? 1.15 : 1) * (mod === 'blitz' ? 1.35 : 1),
     fire: (1 + 0.04 * d) * (E ? 1.25 : 1) * (mod === 'blitz' ? 1.25 : 1),
-    hunt: Math.min(0.7, 0.12 + 0.035 * d + (E ? 0.15 : 0)), loop: E ? 1 : 0, depth: d, elite: E > 0,
+    hunt: Math.min(0.92, 0.45 + 0.03 * d + (E ? 0.15 : 0)), loop: E ? 1 : 0, depth: d, elite: E > 0,
   };
   G.scoreMul = (1 + 0.1 * (d - 1)) * (info.kind === 'duo' ? 2 : 1) * (E ? 2 + 0.2 * E : 1) * (G.mod ? 1.5 : 1);
   G.dropChance = 0.06 * (mod === 'bounty' ? 2.5 : 1);
@@ -278,11 +280,11 @@ function startSector() {
     G.spawnT = 0.5;
   } else {
     G.total = 0;
-    const pw = (1 + 0.04 * power) * (1 + 0.6 * extra);
+    const pw = (1 + 0.04 * power) * crew;
     if (info.kind === 'duo') { // каждый из пары — крепче последнего одиночного босса
       G.boss = makeDuo(info.duo, (1.5 + 0.12 * info.duo) * pw);
       if (info.final) G.boss.deadText = 'ВСЕ 18 БОССОВ ПОВЕРЖЕНЫ';
-    } else G.boss = makeBoss(info.bossId, firstBoss ? 1 + 0.6 * extra : (1.2 + 0.06 * info.bossIdx) * pw);
+    } else G.boss = makeBoss(info.bossId, firstBoss ? crew : (1.2 + 0.06 * info.bossIdx) * pw);
   }
   G.tanks = G.players.slice();
   G.state = 'intro'; G.introT = 0;
