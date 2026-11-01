@@ -91,7 +91,7 @@ const EN = {
   'БАК ×2': 'TANK ×2', 'ИНФЕРНО: ПЕРЕГРЕВ!': 'INFERNO: OVERHEAT!', 'ЗАСТРЯЛ ×2': 'STUCK ×2', 'БУР: ГЛУБИННОЕ МИНИРОВАНИЕ!': 'BORER: DEEP MINING!',
   'ЩИТ': 'SHIELD', 'МАГНИТ!': 'MAGNET!', 'ЩИТ ПЕРЕГРЕТ!': 'SHIELD OVERHEATED!', 'МАГНЕТРОН: ПЕРЕГРУЗКА ПОЛЯ!': 'MAGNETRON: FIELD OVERLOAD!',
   'СБЕЙТЕ СОТЫ!': 'BREAK THE COMBS!', 'ЯДРО ОТКРЫТО!': 'CORE EXPOSED!', 'УЛЕЙ: РОЙ В ЯРОСТИ!': 'HIVE: SWARM FRENZY!',
-  'ПОВЕРЖЕН!': 'DEFEATED!', 'ДУЭТ': 'DUO', 'БЕСК.': 'ENDL.', '!! ДУЭТ БОССОВ !!': '!! BOSS DUO !!',
+  'ПОВЕРЖЕН!': 'DEFEATED!', 'ДУЭТ': 'DUO', 'БЕСК.': 'ENDL.', '!! ДУЭТ БОССОВ !!': '!! BOSS DUO !!', '!! ТРИО БОССОВ !!': '!! BOSS TRIO !!', 'ТРИО БОССОВ': 'BOSS TRIO', 'НЕУЯЗВИМ!': 'INVULNERABLE!',
   'БЕСКОНЕЧНЫЙ РЕЖИМ': 'ENDLESS MODE', 'БЕСКОНЕЧНЫЙ РЕЖИМ: ВРАГИ УСИЛЕНЫ': 'ENDLESS MODE: ENEMIES EMPOWERED',
   'ВСЕ 18 БОССОВ ПОВЕРЖЕНЫ': 'ALL 18 BOSSES DEFEATED', '12 БОССОВ И 6 ДУЭТОВ ПРОЙДЕНЫ': '12 BOSSES AND 6 DUOS BEATEN',
   'ВНИМАНИЕ: ДАЛЬШЕ БУДЕТ ОЧЕНЬ СЛОЖНО!': 'WARNING: IT GETS VERY HARD FROM HERE!',

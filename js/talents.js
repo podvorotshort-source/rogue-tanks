@@ -157,12 +157,8 @@ const perkAllowed = id => !PERKS[id].myth || Talents.lv(id) > 0;
 const auxMax = () => 2 + (Talents.lv('slot3') ? 1 : 0);
 // предел уровня доп. систем: 3, «Конструктор» — 4, «Главный инженер» — 5
 const auxLvMax = () => 3 + (Talents.lv('constr') ? 1 : 0) + (Talents.lv('engineer') ? 1 : 0);
-// обновление: предел оружия без талантов стал 5 — кто уже играл, получает «Оружейника» (предел 10) бесплатно
-if (!Talents.data.v) {
-  const d = Talents.data;
-  if ((d.medals || Object.keys(d.lv).length || Store.get('tanks_rogue_best', { depth: 0 }).depth) && !d.lv.smith) { d.lv.smith = 1; d.gift = 'smith'; }
-  d.v = 2; Talents.save();
-}
+// обновление v3: таланты и медали у всех сброшены — все начинают заново
+if ((Talents.data.v || 0) < 3) { Talents.data = { medals: 0, lv: {}, v: 3 }; Talents.save(); }
 
 // ---------- применение к забегу ----------
 // бесплатные стартовые бонусы помечаются в p.base, чтобы не усиливать врагов (teamPower)

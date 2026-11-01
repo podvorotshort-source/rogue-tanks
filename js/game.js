@@ -180,8 +180,9 @@ function sectorInfo(depth) {
     const k = depth - SOLO_END - 1;
     return { kind: 'duo', biome: k % 4, stage: k + 1, boss: true, duo: k, final: depth === DUO_END };
   }
-  const e = depth - DUO_END; // номер сектора бесконечного режима, с 1
-  return { kind: 'endless', biome: Math.floor((e - 1) / 4) % 4, stage: e, boss: false, endless: e, final: false };
+  const e = depth - DUO_END; // номер сектора бесконечного режима, с 1; каждый 4-й — трио боссов
+  const trio = e % 4 === 0 ? e / 4 - 1 : undefined;
+  return { kind: 'endless', biome: Math.floor((e - 1) / 4) % 4, stage: e, boss: trio !== undefined, trio, endless: e, final: false };
 }
 function sectorName(depth) {
   const s = sectorInfo(depth);
@@ -246,7 +247,7 @@ function startSector() {
   const crew = G.players.length; // вдвоём враги и боссы вдвое крепче, втроём — втрое
   G.mod = (!info.boss && G.depth >= 2 && Math.random() < 0.45) ? pick(MODS) : null;
   const mod = G.mod ? G.mod.id : '';
-  const arena = info.duo !== undefined ? DUO_BOSSES[info.duo].ids : info.bossId;
+  const arena = info.duo !== undefined ? DUO_BOSSES[info.duo].ids : info.trio !== undefined ? TRIO_BOSSES[info.trio % TRIO_BOSSES.length].ids : info.bossId;
   G.level = info.boss ? generateBossArena(info.biome, arena) : generateLevel(info.biome, { sideSpawns: d >= 5, iceMul: mod === 'ice' ? 4 : 1 });
   G.enemies = []; G.bullets = []; G.mortars = []; G.pickups = []; G.effects = []; G.particles = []; G.popups = []; G.spawners = [];
   G.mines = []; G.fires = new Map(); G.timers = [];
@@ -257,7 +258,7 @@ function startSector() {
   G.enemyMods = {
     hp: (mod === 'armored' ? 1 : 0) + (firstBoss ? 0 : Math.floor(d / 6)) + (E ? 1 + E : 0),
     // обычные сектора: враги вчетверо крепче, плюс множитель за число игроков
-    hpMul: (firstBoss ? 1 : 1 + 0.04 * power) * (1 + 0.08 * E) * crew * (info.boss ? 1 : 4),
+    hpMul: (firstBoss ? 1 : 1 + 0.08 * power) * (1 + 0.08 * E) * crew * (info.boss ? 1 : 4),
     speed: (1 + 0.02 * d) * (E ? 1.15 : 1) * (mod === 'blitz' ? 1.35 : 1),
     fire: (1 + 0.04 * d) * (E ? 1.25 : 1) * (mod === 'blitz' ? 1.25 : 1),
     hunt: Math.min(0.92, 0.45 + 0.03 * d + (E ? 0.15 : 0)), loop: E ? 1 : 0, depth: d, elite: E > 0,
@@ -280,8 +281,10 @@ function startSector() {
     G.spawnT = 0.5;
   } else {
     G.total = 0;
-    const pw = (1 + 0.04 * power) * crew;
-    if (info.kind === 'duo') { // каждый из пары — крепче последнего одиночного босса
+    const pw = (1 + 0.08 * power) * crew * 2; // боссы (кроме первого) вдвое крепче
+    if (info.trio !== undefined) { // трио бесконечного режима крепчает с каждым кругом
+      G.boss = makeTrio(info.trio % TRIO_BOSSES.length, (2.2 + 0.15 * info.trio) * (1 + 0.08 * E) * pw);
+    } else if (info.kind === 'duo') { // каждый из пары — крепче последнего одиночного босса
       G.boss = makeDuo(info.duo, (1.5 + 0.12 * info.duo) * pw);
       if (info.final) G.boss.deadText = 'ВСЕ 18 БОССОВ ПОВЕРЖЕНЫ';
     } else G.boss = makeBoss(info.bossId, firstBoss ? crew : (1.2 + 0.06 * info.bossIdx) * pw);
@@ -495,7 +498,7 @@ function updatePlay(dt) {
   }
   for (const s of G.spawners) s.update(dt);
   for (const e of G.enemies) if (e.alive) e.update(dt);
-  if (G.boss && G.boss.alive) { G.boss.update(dt); updateBossStatus(dt); }
+  if (G.boss && G.boss.alive) { G.boss.update(dt); tickBossImmune(dt); updateBossStatus(dt); }
   for (const b of G.bullets) if (b.alive) b.update(dt);
   for (const m of G.mortars) if (m.alive) m.update(dt);
   for (const k of G.pickups) if (k.alive) k.update(dt);
@@ -631,7 +634,7 @@ function drawWorld() {
   for (const b of G.bullets) b.draw(g);
   G.level.drawTop(g);
   for (const e of G.effects) e.draw(g);
-  if (boss) boss.drawAir(g);
+  if (boss) { boss.drawAir(g); drawBossImmune(g); }
   for (const m of G.mortars) { m.drawMarker(g); m.drawShell(g); }
   for (const k of G.pickups) k.draw(g);
   for (const p of G.particles) p.draw(g);
@@ -672,13 +675,13 @@ function drawHUD() {
   else G.players.forEach((p, i) => drawPlayerHUD(p, three ? 2 + i * 95 : (i === 0 ? 3 : 259), three));
   const cx = many ? 350 : three ? 335 : W / 2, bw = many ? 62 : three ? 88 : 110;
   if (many) {
-    if (G.boss) { const b = G.boss; rect(ctx, cx - bw / 2 - 1, 4, bw + 2, 7, '#3c0000'); rect(ctx, cx - bw / 2, 5, Math.round(bw * Math.max(0, b.hp) / b.maxHp), 5, b.flash > 0 ? '#fcfcfc' : '#f83800'); }
+    if (G.boss) { const b = G.boss; rect(ctx, cx - bw / 2 - 1, 4, bw + 2, 7, '#3c0000'); rect(ctx, cx - bw / 2, 5, Math.round(bw * Math.max(0, b.hp) / b.maxHp), 5, b.flash > 0 ? '#fcfcfc' : bossImmune() ? '#3cbcfc' : '#f83800'); }
     else { text(sectorName(G.depth), cx, 1, '#fcfcfc', 1, 'center'); text('× ' + (G.queue.length + G.spawners.length + G.enemies.length), cx, 8, '#a8a8a8', 1, 'center'); }
   } else if (G.boss) {
     const b = G.boss, bx = cx - bw / 2;
     text(b.hudName || b.name, cx, 1, '#f83800', 1, 'center');
     rect(ctx, bx - 1, 9, bw + 2, 5, '#3c0000');
-    rect(ctx, bx, 10, Math.round(bw * Math.max(0, b.hp) / b.maxHp), 3, b.flash > 0 ? '#fcfcfc' : '#f83800');
+    rect(ctx, bx, 10, Math.round(bw * Math.max(0, b.hp) / b.maxHp), 3, b.flash > 0 ? '#fcfcfc' : bossImmune() ? '#3cbcfc' : '#f83800');
   } else {
     text(tr('СЕКТОР') + ' ' + sectorName(G.depth), cx, 1, '#fcfcfc', 1, 'center');
     const left = G.queue.length + G.spawners.length + G.enemies.length;
@@ -738,7 +741,7 @@ function drawIntro() {
   text(tr('СЕКТОР') + ' ' + sectorName(G.depth), W / 2, cy - 44, '#000', 3, 'center');
   text(tr('БИОМ:') + ' ' + tr(BIOMES[info.biome].name), W / 2, cy - 14, '#1c1c1c', 1, 'center');
   if (info.boss) {
-    text(G.boss.subs ? '!! ДУЭТ БОССОВ !!' : '!! БОСС !!', W / 2, cy + 2, blink(6) ? '#a00000' : '#000', 2, 'center');
+    text(G.boss.subs ? (G.boss.subs.length > 2 ? '!! ТРИО БОССОВ !!' : '!! ДУЭТ БОССОВ !!') : '!! БОСС !!', W / 2, cy + 2, blink(6) ? '#a00000' : '#000', 2, 'center');
     text(G.boss.name, W / 2, cy + 22, '#000', 1, 'center');
   } else if (info.endless) {
     text('БЕСКОНЕЧНЫЙ РЕЖИМ: ВРАГИ УСИЛЕНЫ', W / 2, cy + 2, '#a00000', 1, 'center');

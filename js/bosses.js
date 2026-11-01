@@ -27,6 +27,27 @@ class Boss {
   constructor(name, maxHp) {
     this.name = name; this.maxHp = maxHp; this.hp = maxHp;
     this.alive = true; this.dying = false; this.dieT = 0; this.flash = 0; this.t = 0; this.phase = 1; this.active = false;
+    // фаза бессмертия: на 66% и 33% прочности босс на 6 с закрывается щитом и зовёт подмогу
+    this.immune = 0; this.immuneAt = [0.66, 0.33];
+    const hit = this.damage; // перехват любого урона, в том числе по частям тела (турели, кристаллы, соты)
+    this.damage = (dmg, part, by) => {
+      if (this.subs) return hit.call(this, dmg, part, by);
+      if (this.immune > 0 && this.active && !this.dying) { this.shieldT = 0.15; return 'reflect'; }
+      const r = hit.call(this, dmg, part, by);
+      this.checkImmune();
+      return r;
+    };
+  }
+  checkImmune() {
+    const k = this.immuneAt[0];
+    if (k === undefined || this.dying || !this.alive || this.hp > this.maxHp * k + 1) return;
+    while (this.immuneAt.length && this.hp <= this.maxHp * this.immuneAt[0] + 1) this.immuneAt.shift();
+    this.immune = 6; this.flash = 0;
+    G.banner(tr(this.name) + ' ' + tr('НЕУЯЗВИМ!'), '#3cbcfc');
+    Sound.play('shield');
+    const a = this.aim();
+    G.effects.push(new RingFx(a.x, a.y, 8, 40, '#3cbcfc', 0.5));
+    G.spawnMinions(G.players.length > 1 ? 4 : 3, pick(['armor', 'power', 'fast']), a.x, a.y);
   }
   blocks() { return false; }
   hitTest() { return null; }
@@ -39,6 +60,8 @@ class Boss {
   aim() { return { x: this.x, y: this.y }; } // куда целятся самонаводящиеся системы игроков
   damage(dmg) {
     if (!this.active || this.dying) return 'reflect';
+    const k = this.immuneAt[0]; // один мощный залп не проскакивает порог бессмертия
+    if (k !== undefined && this.hp > this.maxHp * k && this.hp - dmg < this.maxHp * k) dmg = this.hp - Math.floor(this.maxHp * k);
     this.hp -= dmg; this.flash = 0.08;
     Sound.play('hit');
     if (this.hp <= 0) { this.hp = 0; this.startDeath(); }
@@ -1749,11 +1772,11 @@ class Hive extends Boss {
 class Duo extends Boss {
   constructor(def, scale, k) {
     const subs = def.ids.map((id, i) => { const b = new BOSS_CLASSES[id](scale); b.shift(def.shift[i][0], def.shift[i][1]); return b; });
-    super(subs.map(b => tr(b.name)).join(' + '), subs[0].maxHp + subs[1].maxHp);
+    super(subs.map(b => tr(b.name)).join(' + '), subs.reduce((a, b) => a + b.maxHp, 0));
     this.subs = subs; this.k = k;
     for (const b of subs) { b.parent = this; b.wraps = new Map(); }
   }
-  get hudName() { return tr('ДУЭТ') + ' ' + (this.k + 1) + '/' + DUO_BOSSES.length; }
+  get hudName() { return this.subs.length > 2 ? tr('ТРИО БОССОВ') : tr('ДУЭТ') + ' ' + (this.k + 1) + '/' + DUO_BOSSES.length; }
   live() { return this.subs.filter(b => b.alive && !b.dying); }
   // обёртка части тела — одна и та же для одной части (пробивающие снаряды помнят, кого уже прошили)
   wrap(b, p) { let w = b.wraps.get(p); if (!w) { w = { duo: b, p }; b.wraps.set(p, w); } return w; }
@@ -1813,5 +1836,33 @@ const DUO_BOSSES = [
   { ids: ['scorpion', 'drill'], shift: [[0, 0], [0, 40]] },
   { ids: ['omega', 'phantom'], shift: [[0, 0], [0, 70]] },
 ];
+// бесконечный режим: каждый 4-й сектор — три босса разом. К паре дуэта добавлен летающий босс (не мешает на земле)
+const TRIO_BOSSES = [
+  { ids: ['goliath', 'heli', 'phantom'], shift: [[0, 0], [-110, 0], [0, 40]] },
+  { ids: ['twins', 'hive', 'heli'], shift: [[0, 0], [0, 0], [110, 0]] },
+  { ids: ['cryo', 'inferno', 'hive'], shift: [[-100, 0], [100, 0], [0, 0]] },
+  { ids: ['worm', 'magnet', 'heli'], shift: [[0, 0], [0, 0], [-110, 0]] },
+  { ids: ['scorpion', 'drill', 'phantom'], shift: [[0, 0], [0, 40], [0, 0]] },
+  { ids: ['omega', 'phantom', 'heli'], shift: [[0, 0], [0, 70], [-110, 40]] },
+];
 function makeBoss(id, scale) { return new BOSS_CLASSES[id](scale); }
 function makeDuo(k, scale) { return new Duo(DUO_BOSSES[k], scale, k); }
+function makeTrio(k, scale) { return new Duo(TRIO_BOSSES[k], scale, k); }
+// щит неуязвимости вокруг босса (у дуэта и трио — у каждого свой) с отсчётом секунд
+function drawBossImmune(g) {
+  for (const b of G.boss.subs || [G.boss]) {
+    if (!(b.immune > 0) || !b.alive || b.dying) continue;
+    const B = b.bounds(), cx = Math.round(B.x + B.w / 2), cy = Math.round(B.y + B.h / 2);
+    g.save();
+    g.globalAlpha = b.shieldT > 0 ? 0.9 : 0.45 + 0.25 * Math.sin(G.time * 12);
+    g.strokeStyle = Math.floor(G.time * 10) % 2 ? '#3cbcfc' : '#a4e4fc'; g.lineWidth = 2;
+    g.beginPath(); g.ellipse(cx, cy, B.w / 2 + 6, B.h / 2 + 6, 0, 0, Math.PI * 2); g.stroke();
+    g.restore();
+    if (b.immune < 1.5 && Math.floor(G.time * 8) % 2) continue; // мигает перед снятием
+    text(String(Math.ceil(b.immune)), cx, Math.max(2, Math.round(B.y - 12)), '#3cbcfc', 1, 'center', '#000');
+  }
+}
+function tickBossImmune(dt) {
+  for (const b of G.boss.subs || [G.boss]) { if (b.immune > 0) b.immune -= dt; if (b.shieldT > 0) b.shieldT -= dt; }
+}
+const bossImmune = () => (G.boss.subs || [G.boss]).some(b => b.immune > 0 && b.alive && !b.dying);
