@@ -160,6 +160,15 @@ const auxLvMax = () => 3 + (Talents.lv('constr') ? 1 : 0) + (Talents.lv('enginee
 // обновление v3: таланты и медали у всех сброшены — все начинают заново
 if ((Talents.data.v || 0) < 3) { Talents.data = { medals: 0, lv: {}, v: 3 }; Talents.save(); }
 
+// чит-коды: набираются на клавиатуре в любой момент (по e.code — не зависит от раскладки)
+const CHEATS = { panzar: () => Talents.add(10) };
+let cheatBuf = '';
+addEventListener('keydown', e => {
+  if (e.repeat || !/^Key[A-Z]$/.test(e.code)) return;
+  cheatBuf = (cheatBuf + e.code[3].toLowerCase()).slice(-12);
+  for (const c in CHEATS) if (cheatBuf.endsWith(c)) { CHEATS[c](); cheatBuf = ''; Sound.play('clear'); }
+});
+
 // ---------- применение к забегу ----------
 // бесплатные стартовые бонусы помечаются в p.base, чтобы не усиливать врагов (teamPower)
 function applyTalents(p) {
