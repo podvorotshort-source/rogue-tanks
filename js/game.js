@@ -281,13 +281,13 @@ function startSector() {
     G.spawnT = 0.5;
   } else {
     G.total = 0;
-    const pw = (1 + 0.08 * power) * crew * 2; // боссы (кроме первого) вдвое крепче
+    const pw = (1 + 0.08 * power) * crew * 2; // боссы вдвое крепче (первый — без роста от прокачки)
     if (info.trio !== undefined) { // трио бесконечного режима крепчает с каждым кругом
       G.boss = makeTrio(info.trio % TRIO_BOSSES.length, (2.2 + 0.15 * info.trio) * (1 + 0.08 * E) * pw);
     } else if (info.kind === 'duo') { // каждый из пары — крепче последнего одиночного босса
       G.boss = makeDuo(info.duo, (1.5 + 0.12 * info.duo) * pw);
       if (info.final) G.boss.deadText = 'ВСЕ 18 БОССОВ ПОВЕРЖЕНЫ';
-    } else G.boss = makeBoss(info.bossId, firstBoss ? crew : (1.2 + 0.06 * info.bossIdx) * pw);
+    } else G.boss = makeBoss(info.bossId, firstBoss ? crew * 2 : (1.2 + 0.06 * info.bossIdx) * pw);
   }
   G.tanks = G.players.slice();
   G.state = 'intro'; G.introT = 0;
