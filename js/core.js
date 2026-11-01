@@ -15,10 +15,18 @@ const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
 function fitCanvas() {
-  let s = Math.min(innerWidth / W, innerHeight / H);
-  if (s >= 3) s = Math.floor(s); // на больших экранах — целый масштаб, на маленьких — во всё окно
-  canvas.style.width = Math.floor(W * s) + 'px';
-  canvas.style.height = Math.floor(H * s) + 'px';
+  // считаем в физических пикселях экрана: при масштабе Windows 125/150% или зуме браузера
+  // CSS-пиксель не равен экранному, и «целый» CSS-масштаб даёт пиксели разной ширины — картинка мылится
+  const dpr = devicePixelRatio || 1, sw = innerWidth * dpr, sh = innerHeight * dpr;
+  let s = Math.min(sw / W, sh / H);
+  if (s / dpr >= 3) s = Math.floor(s); // на больших экранах — целый масштаб, на маленьких — во всё окно
+  const w = Math.floor(W * s), h = Math.floor(H * s);
+  // позицию тоже ставим ровно на экранный пиксель: сдвиг на полпикселя размывает всё изображение
+  Object.assign(canvas.style, {
+    position: 'fixed',
+    left: Math.floor((sw - w) / 2) / dpr + 'px', top: Math.floor((sh - h) / 2) / dpr + 'px',
+    width: w / dpr + 'px', height: h / dpr + 'px'
+  });
 }
 addEventListener('resize', fitCanvas);
 fitCanvas();
