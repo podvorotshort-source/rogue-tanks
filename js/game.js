@@ -14,7 +14,7 @@ const PERKS = {
   luck: { name: 'УДАЧА', desc: 'БОНУСЫ ИЗ ВРАГОВ ВЫПАДАЮТ ВДВОЕ ЧАЩЕ', icon: '?', max: 1, apply: s => { s.luck *= 2; } },
   field: { name: 'ПОЛЕВОЙ РЕМОНТ', desc: '+1 ПРОЧНОСТЬ ПОСЛЕ КАЖДОГО СЕКТОРА', icon: '+', max: 2, apply: s => { s.fieldRepair += 1; } },
   damage: { name: 'КРУПНЫЙ КАЛИБР', desc: 'УРОН СНАРЯДОВ +1', icon: '+1', rare: true, max: 2, apply: s => { s.dmg += 1; } },
-  ricochet: { name: 'РИКОШЕТ', desc: 'СНАРЯДЫ ОТСКАКИВАЮТ ОТ СТАЛИ И КРАЁВ', icon: '<>', rare: true, max: 2, apply: s => { s.bounce += 1; } },
+  ricochet: { name: 'РИКОШЕТ', desc: 'СНАРЯДЫ ОТСКАКИВАЮТ ОТ СТАЛИ И КРАЁВ', icon: '<>', rare: true, max: 1, apply: s => { s.bounce += 1; } },
   shotgun: { name: 'ДРОБОВИК', desc: '+2 СНАРЯДА ВЕЕРОМ ПРИ КАЖДОМ ВЫСТРЕЛЕ', icon: '\\|/', rare: true, max: 1, apply: s => { s.spread = true; } },
   pierce: { name: 'ПРОБИТИЕ', desc: 'СНАРЯД ПРОШИВАЕТ +1 ЦЕЛЬ НАСКВОЗЬ', icon: '-→', rare: true, max: 2, apply: s => { s.pierce += 1; } },
   explosive: { name: 'ФУГАС', desc: 'СНАРЯДЫ ВЗРЫВАЮТСЯ, ЗАДЕВАЯ СОСЕДЕЙ', icon: '*', rare: true, max: 1, apply: s => { s.explosive = 14; } },
