@@ -91,7 +91,7 @@ const talIcon = T => T.perk ? PERKS[T.perk].icon : T.icon;
 
 // ---------- хранилище: медали и уровни талантов ----------
 const Talents = {
-  data: Store.get('tanks_talents', { medals: 0, lv: {} }),
+  data: Store.get('tanks_talents', { medals: 20, lv: {}, v: 4 }),
   // gift — талант, выданный бесплатно (при возврате медали не начисляются и в пороги ярусов он не идёт)
   rankCost(id, i) { return i === 0 && this.data.gift === id ? 0 : TALENTS[id].cost[i]; },
   save() { Store.set('tanks_talents', this.data); },
@@ -157,8 +157,8 @@ const perkAllowed = id => !PERKS[id].myth || Talents.lv(id) > 0;
 const auxMax = () => 2 + (Talents.lv('slot3') ? 1 : 0);
 // предел уровня доп. систем: 3, «Конструктор» — 4, «Главный инженер» — 5
 const auxLvMax = () => 3 + (Talents.lv('constr') ? 1 : 0) + (Talents.lv('engineer') ? 1 : 0);
-// обновление v3: таланты и медали у всех сброшены — все начинают заново
-if ((Talents.data.v || 0) < 3) { Talents.data = { medals: 0, lv: {}, v: 3 }; Talents.save(); }
+// обновление v4: таланты и медали у всех сброшены — все начинают заново с 20 медалями
+if ((Talents.data.v || 0) < 4) { Talents.data = { medals: 20, lv: {}, v: 4 }; Talents.save(); }
 
 // чит-коды: набираются на клавиатуре в любой момент (по e.code — не зависит от раскладки)
 const CHEATS = { panzar: () => Talents.add(10) };
