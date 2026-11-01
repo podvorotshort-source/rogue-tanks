@@ -82,9 +82,9 @@ const TAL_STYLE = {
   cls: { c: '#58d854', b: '#00a800', f: '#003c00' },
   start: { c: '#3cbcfc', b: '#0078f8', f: '#002c5c', label: 'СТАРТОВАЯ КАРТА' },
   pick: { c: '#3cbcfc', b: '#0078f8', f: '#002c5c', label: 'СТАРТОВЫЙ ВЫБОР' },
-  super: { c: '#d878f8', b: '#9c3cd8', f: '#3c105c', label: 'СУПЕРСИНЕРГИЯ' },
+  super: { c: '#f87800', b: '#c84c0c', f: '#4c2000', label: 'СУПЕРСИНЕРГИЯ' },
 };
-// у суперсинергий имя, описание и значок — от мифической карты
+// у суперсинергий имя, описание и значок — от легендарной карты
 const talName = T => T.perk ? PERKS[T.perk].name : T.name;
 const talDesc = T => T.perk ? PERKS[T.perk].desc : T.desc;
 const talIcon = T => T.perk ? PERKS[T.perk].icon : T.icon;
@@ -152,7 +152,7 @@ const Talents = {
 };
 // уровень таланта для конкретного танка: классовые действуют только на свой класс
 function talOf(p, id) { const T = TALENTS[id]; return T.cls && T.cls !== p.cls ? 0 : Talents.lv(id); }
-// мифическая карта доступна в игре, только если её суперсинергия изучена
+// легендарная карта доступна в игре, только если её суперсинергия изучена
 const perkAllowed = id => !PERKS[id].myth || Talents.lv(id) > 0;
 const auxMax = () => 2 + (Talents.lv('slot3') ? 1 : 0);
 // предел уровня доп. систем: 3, «Конструктор» — 4, «Главный инженер» — 5
@@ -392,9 +392,9 @@ function pvCard(id, x, y, w, h) {
 // строка-карта: рамка со значком и название справа
 function pvRow(id, x, y, dim) {
   const pk = PERKS[id], s = cardStyle(pk);
-  rect(ctx, x, y, 26, 14, '#000'); frame(x, y, 26, 14, dim ? '#3c105c' : s.b);
+  rect(ctx, x, y, 26, 14, '#000'); frame(x, y, 26, 14, dim ? s.i : s.b);
   if (!dim) text(pk.icon, x + 13, y + 4, s.icon, 1, 'center');
-  text(pk.name, x + 31, y + 4, dim ? '#3c105c' : '#fcfcfc');
+  text(pk.name, x + 31, y + 4, dim ? s.i : '#fcfcfc');
 }
 function pvCards(ids, cx, y, h, title) {
   text(title, cx, y + 5, '#7c7c7c', 1, 'center');
@@ -405,13 +405,13 @@ function pvCards(ids, cx, y, h, title) {
 }
 function pvSuper(T, cx, y, h) {
   const [a, b] = PERKS[T.perk].parts, x = cx - 82;
-  text('НУЖНЫ ДВЕ ЛЕГЕНДАРКИ:', cx, y + 5, '#7c7c7c', 1, 'center');
+  text('НУЖНЫ ДВЕ ЭПИЧЕСКИЕ:', cx, y + 5, '#7c7c7c', 1, 'center');
   pvRow(a, x, y + 16);
   text('+', x + 13, y + 33, '#fcfcfc', 1, 'center');
   pvRow(b, x, y + 42);
   text('=', x + 13, y + 59, '#fcfcfc', 1, 'center');
   pvRow(T.perk, x, y + 68, !(blink(2) || Talents.lv(T.id)));
-  wrap('КАРТА ВЫПАДЕТ, КОГДА СОБРАНЫ ОБЕ', 26).forEach((l, k) => text(l, cx, y + 88 + k * 9, '#9c3cd8', 1, 'center'));
+  wrap('КАРТА ВЫПАДЕТ, КОГДА СОБРАНЫ ОБЕ', 26).forEach((l, k) => text(l, cx, y + 88 + k * 9, '#c84c0c', 1, 'center'));
 }
 function pvIcon(T, cx, y, h) {
   const my = y + h / 2 - 14;

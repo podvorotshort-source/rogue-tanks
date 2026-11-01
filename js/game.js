@@ -38,7 +38,7 @@ const PERKS = {
   mort: { name: 'МИНОМЁТ', desc: 'НАВЕСОМ ЧЕРЕЗ СТЕНЫ БЬЁТ ПО ДАЛЬНИМ ВРАГАМ', icon: '⌒', aux: true, max: 3 },
   saw: { name: 'ДИСКИ-ПИЛЫ', desc: 'ПИЛЫ КРУЖАТ ВОКРУГ ТАНКА, РЕЖУТ ВРАГОВ И СБИВАЮТ ПУЛИ', icon: '✲', aux: true, max: 3 },
 
-  // синергии: легендарные, появляются только когда собраны обе части
+  // синергии: эпические, появляются только когда собраны обе части
   napalm: { name: 'НАПАЛМ', desc: 'ВАШИ ВЗРЫВЫ ОСТАВЛЯЮТ ГОРЯЩУЮ ЗЕМЛЮ', icon: '♨*', legend: true, parts: ['inc', 'explosive'] },
   thermo: { name: 'ТЕРМОШОК', desc: 'ОГОНЬ ПО ЗАМОРОЖЕННОМУ - ТРОЙНОЙ УРОН', icon: '♨❄', legend: true, parts: ['inc', 'cryo'] },
   shatter: { name: 'ЛЕДЯНОЙ РАСКОЛ', desc: 'ЗАМОРОЖЕННЫЙ ОТ ВЗРЫВА РАЗЛЕТАЕТСЯ ОСКОЛКАМИ', icon: '❄*', legend: true, parts: ['cryo', 'explosive'] },
@@ -56,10 +56,10 @@ const PERKS = {
   hotsaw: { name: 'РАСКАЛЁННЫЕ ПИЛЫ', desc: 'ПИЛЫ ПОДЖИГАЮТ ВРАГОВ', icon: '✲♨', legend: true, parts: ['saw', 'inc'] },
   disch: { name: 'РАЗРЯДНИК', desc: 'БЛОК ЭНЕРГОЩИТОМ ВЫЗЫВАЕТ ЭМИ-ВОЛНУ', icon: '()⚡', legend: true, parts: ['eshield', 'tesla'] },
 
-  // мифические суперсинергии из двух легендарок: в игре появляются, только если изучен одноимённый талант
+  // легендарные суперсинергии из двух эпических: в игре появляются, только если изучен одноимённый талант и собраны обе части
   ion: { name: 'ИОННАЯ ПУШКА', desc: 'СНАРЯД БЬЁТ МОЛНИЕЙ ВСЕХ, МИМО КОГО ПРОЛЕТАЕТ', icon: '⚡⚡', myth: true, parts: ['rail', 'ball'] },
   abszero: { name: 'АБСОЛЮТНЫЙ НОЛЬ', desc: 'ЗАМОРОЖЕННЫЙ ПРИ ГИБЕЛИ ЗАМОРАЖИВАЕТ ВСЕХ ВОКРУГ', icon: '❄❄', myth: true, parts: ['thermo', 'shatter'] },
-  thunder: { name: 'ГРОЗОВАЯ КАРТЕЧЬ', desc: '7 ДРОБИН, МОЛНИЯ ТЕСЛЫ БЬЁТ 4 ЦЕЛИ', icon: '⚡\\|/', myth: true, parts: ['storm', 'ball'], apply: s => { s.pellets = Math.max(s.pellets, 7); } },
+  thunder: { name: 'ГРОЗОВАЯ КАРТЕЧЬ', desc: '+2 ДРОБИНЫ, МОЛНИЯ ТЕСЛЫ БЬЁТ 4 ЦЕЛИ', icon: '⚡\\|/', myth: true, parts: ['storm', 'ball'], apply: s => { s.pellets += 2; } },
   carpet: { name: 'КОВРОВАЯ БОМБАРДИРОВКА', desc: 'МЕТКА ВЫЗЫВАЕТ НА ЦЕЛЬ ЗАЛП ИЗ 4 БОМБ', icon: '⌖⌒', myth: true, parts: ['spotter', 'artstrike'] },
   whirl: { name: 'ОГНЕННЫЙ ВИХРЬ', desc: '+1 ПИЛА, ПИЛЫ ШИРЕ И ОСТАВЛЯЮТ ОГОНЬ', icon: '✲♨✲', myth: true, parts: ['grinder', 'hotsaw'] },
   scorch: { name: 'ВЫЖЖЕННАЯ ЗЕМЛЯ', desc: 'МИНЫ ОСТАВЛЯЮТ ПЛАМЯ, ГОРЯЩИЕ ВРАГИ ВЗРЫВАЮТСЯ', icon: '♨●', myth: true, parts: ['napalm', 'deton'] },
@@ -256,8 +256,8 @@ function startSector() {
   // бесконечный режим: все враги усиленные, прочность растёт с каждым сектором (+1 и +8% за сектор)
   G.enemyMods = {
     hp: (mod === 'armored' ? 1 : 0) + (firstBoss ? 0 : Math.floor(d / 6)) + (E ? 1 + E : 0),
-    // обычные сектора: враги вдвое крепче, плюс множитель за число игроков
-    hpMul: (firstBoss ? 1 : 1 + 0.04 * power) * (1 + 0.08 * E) * crew * (info.boss ? 1 : 2),
+    // обычные сектора: враги вчетверо крепче, плюс множитель за число игроков
+    hpMul: (firstBoss ? 1 : 1 + 0.04 * power) * (1 + 0.08 * E) * crew * (info.boss ? 1 : 4),
     speed: (1 + 0.02 * d) * (E ? 1.15 : 1) * (mod === 'blitz' ? 1.35 : 1),
     fire: (1 + 0.04 * d) * (E ? 1.25 : 1) * (mod === 'blitz' ? 1.25 : 1),
     hunt: Math.min(0.92, 0.45 + 0.03 * d + (E ? 0.15 : 0)), loop: E ? 1 : 0, depth: d, elite: E > 0,
@@ -316,7 +316,7 @@ function saveBest() {
 function cantReason(p, id) {
   const P = PERKS[id];
   if ((p.perks[id] || 0) >= (P.aux ? auxLvMax() : P.max)) return 'МАКС.';
-  if (P.legend && !synReady(p, id)) return 'НЕТ ЧАСТЕЙ';
+  if ((P.legend || P.myth) && !synReady(p, id)) return 'НЕТ ЧАСТЕЙ';
   if (P.aux && !p.perks[id] && auxCount(p) >= auxMax()) return 'НЕТ СЛОТА';
   return '';
 }
@@ -804,8 +804,8 @@ function drawPerk() {
   text(ow.length > 62 ? ow.slice(0, 62) : ow, W / 2, 244, '#4c4c4c', 1, 'center');
 }
 function cardStyle(pk) {
-  if (pk.myth) return { b: '#d878f8', i: '#3c105c', icon: '#d878f8', label: 'МИФИЧЕСКОЕ' };
-  if (pk.legend) return { b: '#f87800', i: '#4c2000', icon: '#f87800', label: 'ЛЕГЕНДАРНОЕ' };
+  if (pk.myth) return { b: '#f87800', i: '#4c2000', icon: '#f87800', label: 'ЛЕГЕНДАРНОЕ' };
+  if (pk.legend) return { b: '#d878f8', i: '#3c105c', icon: '#d878f8', label: 'ЭПИЧЕСКОЕ' };
   if (pk.aux) return { b: '#3cbcfc', i: '#103c5c', icon: '#3cbcfc', label: 'СИСТЕМА' };
   if (pk.rare) return { b: '#3cbcfc', i: '#103c5c', icon: '#3cbcfc', label: 'РЕДКОЕ' };
   return { b: '#8c8c8c', i: '#2c2c2c', icon: '#fcfcfc', label: 'ОБЫЧНОЕ' };

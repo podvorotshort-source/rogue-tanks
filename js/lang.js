@@ -173,11 +173,11 @@ const EN = {
   'ОТВЕТНЫЙ ОГОНЬ': 'RETALIATION', 'ПОЛУЧИВ УРОН, ВЫПУСКАЕТ 8 СНАРЯДОВ': 'WHEN HIT, FIRES 8 SHELLS',
   'ВЫЖИДАНИЕ': 'PATIENCE', 'ПОСЛЕ 1.5 С БЕЗ ВЫСТРЕЛОВ СНАРЯД ×3 И НАСКВОЗЬ': 'AFTER 1.5 S WITHOUT FIRING: SHELL ×3 AND PIERCING',
   'БРОНЕБОЙНЫЕ': 'ARMOR-PIERCING', 'СНАРЯДЫ ЛОМАЮТ СТАЛЬ': 'SHELLS BREAK STEEL',
-  // мифические суперсинергии
-  'МИФИЧЕСКОЕ': 'MYTHIC',
+  // легендарные суперсинергии
+  'ЭПИЧЕСКОЕ': 'EPIC',
   'ИОННАЯ ПУШКА': 'ION CANNON', 'СНАРЯД БЬЁТ МОЛНИЕЙ ВСЕХ, МИМО КОГО ПРОЛЕТАЕТ': 'SHELL ZAPS EVERY FOE IT FLIES PAST',
   'АБСОЛЮТНЫЙ НОЛЬ': 'ABSOLUTE ZERO', 'ЗАМОРОЖЕННЫЙ ПРИ ГИБЕЛИ ЗАМОРАЖИВАЕТ ВСЕХ ВОКРУГ': 'A FROZEN FOE FREEZES EVERYONE NEARBY WHEN IT DIES',
-  'ГРОЗОВАЯ КАРТЕЧЬ': 'THUNDER BUCKSHOT', '7 ДРОБИН, МОЛНИЯ ТЕСЛЫ БЬЁТ 4 ЦЕЛИ': '7 PELLETS, TESLA LIGHTNING HITS 4 TARGETS',
+  'ГРОЗОВАЯ КАРТЕЧЬ': 'THUNDER BUCKSHOT', '+2 ДРОБИНЫ, МОЛНИЯ ТЕСЛЫ БЬЁТ 4 ЦЕЛИ': '+2 PELLETS, TESLA LIGHTNING HITS 4 TARGETS',
   'КОВРОВАЯ БОМБАРДИРОВКА': 'CARPET BOMBING', 'МЕТКА ВЫЗЫВАЕТ НА ЦЕЛЬ ЗАЛП ИЗ 4 БОМБ': 'A MARK CALLS 4 BOMBS ON THE TARGET',
   'ОГНЕННЫЙ ВИХРЬ': 'FIRE WHIRL', '+1 ПИЛА, ПИЛЫ ШИРЕ И ОСТАВЛЯЮТ ОГОНЬ': '+1 SAW, WIDER ORBIT, SAWS LEAVE FIRE',
   'ВЫЖЖЕННАЯ ЗЕМЛЯ': 'SCORCHED EARTH', 'МИНЫ ОСТАВЛЯЮТ ПЛАМЯ, ГОРЯЩИЕ ВРАГИ ВЗРЫВАЮТСЯ': 'MINES LEAVE FLAMES, BURNING FOES EXPLODE',
@@ -193,7 +193,7 @@ const EN = {
   'СТРЕЛКИ - ВЫБОР  ОГОНЬ - ИЗУЧИТЬ  СПЕЦ - ВЕРНУТЬ  ESC - НАЗАД': 'ARROWS - SELECT  FIRE - LEARN  SPECIAL - REFUND  ESC - BACK',
   'ДЖОЙСТИК - ВЫБОР  ● - ИЗУЧИТЬ  * - ВЕРНУТЬ  P - НАЗАД': 'STICK - SELECT  ● - LEARN  * - REFUND  P - BACK',
   'В НАЧАЛЕ ЗАБЕГА:': 'AT THE START OF A RUN:', 'ОДНА ИЗ 8 СИСТЕМ НА ВЫБОР:': 'ONE OF 8 SYSTEMS, YOUR PICK:', 'ОДНА НА ВЫБОР:': 'ONE, YOUR PICK:',
-  'НУЖНЫ ДВЕ ЛЕГЕНДАРКИ:': 'NEEDS TWO LEGENDARIES:',
+  'НУЖНЫ ДВЕ ЭПИЧЕСКИЕ:': 'NEEDS TWO EPICS:',
   'КАРТА ВЫПАДЕТ, КОГДА СОБРАНЫ ОБЕ': 'THE CARD DROPS ONCE YOU HAVE BOTH',
   'СТАРТОВЫЙ БОНУС': 'STARTING BONUS', 'ТАЛАНТ:': 'TALENT:', 'СПЕЦ - ПЕРЕБРОСИТЬ КАРТЫ': 'SPECIAL - REROLL CARDS',
   'МЕДАЛИ ЗА ЗАБЕГ:': 'MEDALS THIS RUN:', 'ВСЕГО:': 'TOTAL:', 'ВТОРОЙ ШАНС!': 'SECOND CHANCE!',

@@ -564,8 +564,8 @@ class Player extends Tank {
     this.lastShot = G.time;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
     // широкий веер; боковые дробины бьют вполсилы и гаснут на ~90 px — дробовик силён вблизи и по толпе, а не по одной цели
-    const angs = !s.spread ? [0] : s.pellets >= 7 ? [0, -0.12, 0.12, -0.24, 0.24, -0.36, 0.36]
-      : s.pellets >= 5 ? [0, -0.15, 0.15, -0.3, 0.3] : [0, -0.24, 0.24];
+    const step = s.pellets >= 7 ? 0.12 : s.pellets >= 5 ? 0.15 : 0.24, angs = [0];
+    if (s.spread) for (let k = 1; k <= (s.pellets - 1) >> 1; k++) angs.push(-step * k, step * k);
     const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7, adren = this.adren > 0 ? 2 : 1; // «Адреналин»
     for (const a of angs) {
       const ch = charged && a === 0, side = a !== 0;
@@ -1033,7 +1033,7 @@ class Enemy extends Tank {
       G.pickups.push(new Pickup(Math.round(this.x / 8) * 8, Math.round(this.y / 8) * 8, randomPickup()));
     if (this.type === 'kamikaze') explode(this.cx, this.cy, this.elite ? 27 : 18, { hurtPlayers: true, silent: true });
     if (this.elite && this.type === 'miner' && G.mines.length < 16) G.mines.push(new EMine(this.cx, this.cy)); // мина-посмертка
-    // мифические синергии на гибели врага
+    // легендарные синергии на гибели врага
     if ((this.frozen > 0 || this.thaw === G.time) && by instanceof Player && by.perks.abszero) freezeBurst(this, by);
     const fb = this.burnBy;
     if (this.burn > 0 && fb instanceof Player && fb.perks.scorch) explode(this.cx, this.cy, 14, { hurtEnemies: true, hurtBoss: true, by: fb, silent: true });
