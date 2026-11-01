@@ -11,8 +11,7 @@ const BLK = 16, BCOLS = 24, BROWS = 15;        // блоки 16x16 (размер
 const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];  // 0 вверх, 1 вправо, 2 вниз, 3 влево
 
 const canvas = document.getElementById('screen');
-// desynchronized — вывод в обход очереди композитора (меньше задержка на ТВ/мониторе); alpha:false ускоряет его
-const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
 function fitCanvas() {
