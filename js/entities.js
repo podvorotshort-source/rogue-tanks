@@ -724,6 +724,11 @@ class Player extends Tank {
       return;
     }
     if (this.inv > 0 && this.dashT <= 0 && Math.floor(G.time * 20) % 2 === 0) return;
+    const mk = this.ctrl.net != null && Rec.on && Rec.mark(g, this); // онлайн-гость: свой танк у него едет без задержки
+    this.drawBody(g, x, y);
+    if (mk) Rec.unmark();
+  }
+  drawBody(g, x, y) {
     const pal = this.flash > 0 ? 'white' : this.pal;
     g.drawImage(TankGfx.get(this.shape, pal, this.look)[this.anim][this.dir], x, y);
     drawAux(this, g);

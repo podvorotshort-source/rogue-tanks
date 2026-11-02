@@ -9,6 +9,10 @@
 //  гость присылает свои таланты (его танк играет с ними), а хост шлёт ему
 //  медали за каждый пройденный сектор — они копятся на устройстве гостя.
 //
+//  Каналы: 'in' и 'scr' — надёжные (служебное и картинки-снимки), 'key' и
+//  'frm' — без повторов: кнопки гостя каждый шаг и кадры экрана. Потерянное
+//  не пересылается — следом уже идёт свежее, и ничто не ждёт старого пакета.
+//
 //  Знакомство (обмен описаниями соединения) идёт через публичные
 //  MQTT-серверы — сразу через несколько, у разных компаний: хватит,
 //  чтобы оба устройства достучались хотя бы до одного. Дальше связь
@@ -57,6 +61,7 @@ const iceList = set => [...set].filter(Boolean).join(',') || '-';
 const NET_KEYS = ['Up', 'Down', 'Left', 'Right', 'A', 'B', 'Start'];
 const NET_START = ['Escape', 'KeyP', 'TouchStart', ...PAD_STARTS];
 const netId = () => Math.random().toString(36).slice(2, 10);
+const NET_LOSSY = { ordered: false, maxRetransmits: 0 };
 
 // ---------- крошечный MQTT 3.1.1 поверх WebSocket (только QoS 0) ----------
 class Mqtt {
@@ -144,7 +149,7 @@ const Net = {
   role: null, bus: null, code: '', status: '', failed: false, startT: 0,
   guests: [],           // хост: место гостя (0..4) -> { gid, pc, dc }
   audio: null, qr: null,
-  pc: null, dc: null, gid: '', sound: null, info: null, statT: 0, bits: -1, sendT: 0, waitT: 0, joinT: 0, slot: -1, offerT: 0, // гость
+  pc: null, dc: null, gid: '', sound: null, info: null, statT: 0, bits: -1, kseq: 0, key: null, sendT: 0, waitT: 0, joinT: 0, slot: -1, offerT: 0, // гость
 
   get open() { return !!(this.bus && this.bus.count); },
   hosting() { return this.role === 'host' && this.open; },
@@ -196,16 +201,22 @@ const Net = {
   },
   async offer(slot, gid) {
     const pc = new RTCPeerConnection(NET_ICE);
-    const g = this.guests[slot] = { gid, pc, dc: null, slot, live: false, answered: false, queue: [], seen: { loc: new Set(), rem: new Set() } };
+    const g = this.guests[slot] = { gid, pc, dc: null, slot, inSeq: 0, live: false, answered: false, queue: [], seen: { loc: new Set(), rem: new Set() } };
     iceTrickle(pc, c => this.bus.pub(this.topic('g/' + gid), { t: 'cand', c }), g.seen);
     const au = this.getAudio();
     if (au) for (const t of au.getTracks()) pc.addTrack(t, au);
     const dc = g.dc = pc.createDataChannel('in');
-    const scr = pc.createDataChannel('scr'); // экран: команды рисования
+    const key = pc.createDataChannel('key', NET_LOSSY); // кнопки гостя каждый шаг: [биты, номер u32]
+    key.binaryType = 'arraybuffer';
+    key.onmessage = e => { if (e.data.byteLength >= 5) { const v = new DataView(e.data); this.applyBits(slot, v.getUint8(0), v.getUint32(1, true)); } };
+    const scr = pc.createDataChannel('scr'); // экран: снимки картинок и команды на скрытых холстах
     scr.binaryType = 'arraybuffer';
     scr.onopen = () => { g.scr = scr; Remote.add(g); };
+    const frm = pc.createDataChannel('frm', NET_LOSSY); // экран: кадры
+    frm.binaryType = 'arraybuffer';
+    frm.onopen = () => { g.frm = frm; };
     dc.onopen = () => { g.live = true; dc.send(JSON.stringify({ t: 'hi', slot })); Sound.play('pickup'); };
-    dc.onmessage = e => { let d; try { d = JSON.parse(e.data); } catch (er) { return; } if (d.t === 'in') this.applyBits(slot, d.b | 0); else if (d.t === 'tal') g.lv = cleanLv(d.lv); };
+    dc.onmessage = e => { let d; try { d = JSON.parse(e.data); } catch (er) { return; } if (d.t === 'in') this.applyBits(slot, d.b | 0, d.s); else if (d.t === 'tal') g.lv = cleanLv(d.lv); };
     dc.onclose = () => this.dropGuest(g);
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed' || pc.connectionState === 'closed') this.dropGuest(g); };
     setTimeout(() => { if (!g.live) this.dropGuest(g); }, 30000); // гость так и не подключился — освобождаем место
@@ -215,7 +226,10 @@ const Net = {
       this.bus.pub(this.topic('g/' + gid), { t: 'offer', sdp: { type: 'offer', sdp: pc.localDescription.sdp } });
     } catch (e) { this.dropGuest(g); }
   },
-  applyBits(slot, b) {
+  // s — номер шага гостя: опоздавший пакет (старее уже применённого) отбрасываем
+  applyBits(slot, b, s) {
+    const g = this.guests[slot];
+    if (g && s != null) { if (s <= g.inSeq) return; g.inSeq = s; }
     NET_KEYS.forEach((k, i) => {
       const code = 'Net' + slot + k;
       if (b & (1 << i)) Input.press(code); else if (Input.down[code]) Input.release(code);
@@ -300,6 +314,8 @@ const Net = {
     };
     pc.ondatachannel = e => {
       if (e.channel.label === 'scr') { Play.listen(e.channel); return; }
+      if (e.channel.label === 'frm') { Play.listenFrames(e.channel); return; }
+      if (e.channel.label === 'key') { this.key = e.channel; return; }
       const dc = this.dc = e.channel;
       dc.onmessage = m => {
         let x; try { x = JSON.parse(m.data); } catch (er) { return; }
@@ -378,11 +394,19 @@ const Net = {
     this.statT -= dt;
     if (this.statT <= 0) { this.statT = 1; this.showStats(); }
     if (!this.dc || this.dc.readyState !== 'open') return;
-    const C = ALL_CTRL, keys = [C.up, C.down, C.left, C.right, C.fire, C.special, NET_START];
-    let b = 0;
-    keys.forEach((k, i) => { if (Input.any(k)) b |= 1 << i; });
+    // направление — одно, как его выберет хост (последнее нажатое): так же его предсказывает Pred
+    const C = ALL_CTRL, dir = ctrlDir(C), keys = [C.fire, C.special, NET_START];
+    let b = dir >= 0 ? 1 << [0, 3, 1, 2][dir] : 0; // биты NET_KEYS: Up, Down, Left, Right
+    keys.forEach((k, i) => { if (Input.any(k)) b |= 1 << (i + 4); });
+    const s = ++this.kseq;
+    Pred.step(s, dir, dt);
+    if (this.key && this.key.readyState === 'open') {
+      const u = new Uint8Array(5), v = new DataView(u.buffer); v.setUint8(0, b); v.setUint32(1, s, true);
+      try { this.key.send(u); } catch (e) { /* канал закрылся */ }
+    }
+    // запасной путь — надёжный канал, при смене кнопок и раз в 0.25 с
     this.sendT -= dt;
-    if (b !== this.bits || this.sendT <= 0) { this.bits = b; this.sendT = 0.25; try { this.dc.send(JSON.stringify({ t: 'in', b })); } catch (e) { /* канал закрылся */ } }
+    if (b !== this.bits || this.sendT <= 0) { this.bits = b; this.sendT = 0.25; try { this.dc.send(JSON.stringify({ t: 'in', b, s })); } catch (e) { /* канал закрылся */ } }
   },
   // в углу: как соединены (напрямую или через TURN), пинг, кадров в секунду и трафик
   async showStats() {

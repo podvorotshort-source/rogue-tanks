@@ -6,6 +6,9 @@
 //  Картинки-источники (спрайты, слои уровня) уходят один раз, при первом
 //  использовании, снимком пикселей; дальше — только команды, которые их меняют.
 //  Текст, круги и эллипсы уходят одной командой, а не сотней fillRect.
+//  Снимки идут надёжным каналом 'scr' (номер seq), кадры — каналом без повторов
+//  'frm'; кадр помнит, какой seq ему нужен, и ждёт его, если снимки отстали.
+//  Свой танк гость рисует сразу там, куда уже нажал (Pred), не дожидаясь хоста.
 // ============================================================
 
 const REM_M = ['drawImage', 'fillRect', 'clearRect', 'strokeRect', 'beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'arcTo',
@@ -14,8 +17,10 @@ const REM_M = ['drawImage', 'fillRect', 'clearRect', 'strokeRect', 'beginPath', 
 const REM_P = ['fillStyle', 'strokeStyle', 'globalAlpha', 'globalCompositeOperation', 'lineWidth', 'imageSmoothingEnabled',
   'font', 'textAlign', 'textBaseline', 'lineCap', 'lineJoin'];
 const REM_MAC = ['disc', 'ellipse', 'text'];                 // функции рисования, которые гость повторяет сам целиком
-const OP_PROP = 64, OP_TGT = 120, OP_SNAP = 121, OP_STATE = 122, OP_PAT = 123, OP_FREE = 125, OP_RESET = 126, OP_MAC = 127;
-const REM_CHUNK = 16000;                                     // больше за раз канал данных может не принять
+const OP_PROP = 64, OP_TGT = 120, OP_SNAP = 121, OP_STATE = 122, OP_PAT = 123, OP_MARK = 124, OP_FREE = 125, OP_RESET = 126, OP_MAC = 127;
+const REM_CHUNK = 16000;                                     // больше за раз надёжный канал может не принять
+const REM_RAW = 1024;                                        // меньше — шлём без сжатия: сжатие тоже стоит времени
+const REM_FRM_MAX = 200000;                                  // кадр больше — не шлём каналом без повторов
 
 // ---------- двоичная запись / чтение ----------
 const remEnc = new TextEncoder(), remDec = new TextDecoder();
@@ -49,6 +54,8 @@ class RemR {
   s() { const k = this.v(), r = this.u.subarray(this.n, this.n + k); this.n += k; return remDec.decode(r); }
   bytes(k) { const r = this.u.subarray(this.n, this.n + k); this.n += k; return r; }
 }
+// сжать, если стоит: { z, zip }
+const remPack = u => u.length < REM_RAW ? Promise.resolve({ z: u, zip: false }) : remZip(u).then(z => ({ z, zip: true }));
 const remZip = async (u, inflate) => new Uint8Array(await new Response(new Blob([u]).stream()
   .pipeThrough(inflate ? new DecompressionStream('deflate') : new CompressionStream('deflate'))).arrayBuffer());
 
@@ -171,7 +178,17 @@ const Rec = {
     this.core.b(OP_RESET);
     this.state(this.main, ctx, 0);
   },
-  // после отрисовки кадра: записанное -> сообщение [длина core][core][main]; null — кадр не шлём
+  // танк онлайн-гостя: гость сдвинет его туда, куда уже нажал (Pred); x, y — где он у хоста
+  mark(g, p) {
+    if (this.cinfo(g).id !== 0) return false;
+    const w = this.tgt(this.main, 0), gu = Net.guests[p.ctrl.net];
+    w.b(OP_MARK); w.b(1); w.v(p.ctrl.net); w.i(Math.round(p.x * 4)); w.i(Math.round(p.y * 4)); w.b(p.dir);
+    w.f(p.stats.speed); w.v(gu ? gu.inSeq : 0);
+    w.b(G.state === 'play' && !G.paused && p.dashT <= 0 ? 1 : 0);
+    return true;
+  },
+  unmark() { const w = this.tgt(this.main, 0); w.b(OP_MARK); w.b(0); },
+  // после отрисовки кадра: записанное { core, main }; null — кадр не шлём
   frame(now) {
     if (this.freed.length) {
       const c = this.core; c.b(OP_FREE); c.v(this.freed.length);
@@ -182,11 +199,7 @@ const Rec = {
     this.lastSend = now;
     const core = this.core.take(), main = this.main.take();
     this.state(this.main, ctx, 0);
-    const head = new RemW(); head.v(core.length);
-    const h = head.take();
-    const full = new Uint8Array(h.length + core.length + main.length);
-    full.set(h); full.set(core, h.length); full.set(main, h.length + core.length);
-    return { full, coreOnly: full.subarray(0, h.length + core.length) };
+    return { core, main };
   },
 };
 
@@ -242,31 +255,56 @@ const Rec = {
 // ============================================================
 //  ГОСТЬ: повтор
 // ============================================================
+// сообщение: [флаги][данные], флаги: 1 — продолжение следует (только 'scr'), 2 — данные сжаты
 const Play = {
-  cv: new Map(), pats: new Map(), frame: null, parts: [], chain: Promise.resolve(),
+  cv: new Map(), pats: new Map(), frame: null, parts: [], chain: Promise.resolve(), mk: null,
+  seq: 0, fno: 0, pend: null, // последний полученный seq снимков, номер показанного кадра, кадр, ждущий снимков
   frames: 0, bytes: 0,   // для строки связи: кадров и байт с прошлого раза
+  // 'scr': [seq][длина core][core][кадр — если канала 'frm' нет]
   listen(dc) {
     dc.binaryType = 'arraybuffer';
     dc.onmessage = e => {
       const u = new Uint8Array(e.data);
       this.bytes += u.length;
       this.parts.push(u.subarray(1));
-      if (u[0]) return; // продолжение следует
+      if (u[0] & 1) return; // продолжение следует
       let n = 0; for (const p of this.parts) n += p.length;
       const all = new Uint8Array(n); n = 0;
       for (const p of this.parts) { all.set(p, n); n += p.length; }
       this.parts = [];
-      this.chain = this.chain.then(() => remZip(all, true)).then(m => this.apply(m), () => {});
+      const zip = u[0] & 2;
+      this.chain = this.chain.then(() => zip ? remZip(all, true) : all).then(m => this.apply(m), () => {});
     };
   },
+  // 'frm': [нужный seq][номер кадра][кадр] — приходят как попало, старые отбрасываем
+  listenFrames(dc) {
+    dc.binaryType = 'arraybuffer';
+    dc.onmessage = e => {
+      const u = new Uint8Array(e.data), body = u.subarray(1);
+      this.bytes += u.length;
+      (u[0] & 2 ? remZip(body, true) : Promise.resolve(body)).then(m => {
+        const r = new RemR(m), need = r.v(), fno = r.v(), frame = m.subarray(r.n);
+        if (fno <= this.fno) return;
+        if (need <= this.seq) this.show(frame, fno);
+        else if (!this.pend || fno > this.pend.fno) this.pend = { need, fno, frame };
+      }, () => {});
+    };
+  },
+  show(frame, fno) {
+    this.frame = frame; this.fno = fno; this.frames++;
+    if (this.pend && this.pend.fno <= fno) this.pend = null;
+  },
   apply(m) {
-    const r = new RemR(m), coreLen = r.v(), start = r.n;
+    const r = new RemR(m), seq = r.v(), coreLen = r.v(), start = r.n;
     this.run(r, start + coreLen, null);
-    if (r.n < m.length) { this.frame = m.subarray(r.n); this.frames++; }
+    this.seq = seq;
+    if (r.n < m.length) this.show(m.subarray(r.n), this.fno + 1);
+    else if (this.pend && this.pend.need <= seq) this.show(this.pend.frame, this.pend.fno);
   },
   draw() {
     if (!this.frame) return false;
     ctx.save();
+    Pred.frame(this.fno); this.mk = null;
     this.run(new RemR(this.frame), this.frame.length, ctx);
     ctx.restore();
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
@@ -301,6 +339,11 @@ const Play = {
         if (!g || !a) continue;
         if (name === 'text') { a.length = 7; a[7] = g; } else a.unshift(g);
         try { window[name](...a); } catch (e) { /* пропуск */ }
+      } else if (op === OP_MARK) {
+        if (!r.b()) { if (g && this.mk) g.translate(-this.mk[0], -this.mk[1]); this.mk = null; continue; }
+        const slot = r.v(), x = r.i() / 4, y = r.i() / 4, dir = r.b(), speed = r.f(), ack = r.v(), live = r.b();
+        this.mk = g && slot === Net.slot && live ? Pred.shift(x, y, dir, speed, ack) : null;
+        if (this.mk) g.translate(this.mk[0], this.mk[1]);
       } else if (op === OP_SNAP) this.snap(r);
       else if (op === OP_STATE) this.state(r);
       else if (op === OP_PAT) {
@@ -342,7 +385,38 @@ const Play = {
     if (t === 2) return r.f();
     return undefined;
   },
-  reset() { this.cv.clear(); this.pats.clear(); this.frame = null; this.parts = []; },
+  reset() { this.cv.clear(); this.pats.clear(); this.frame = null; this.parts = []; this.pend = null; },
+};
+
+// ============================================================
+//  ГОСТЬ: предсказание своего танка
+//  Хост присылает, где танк у него и какой последний шаг кнопок гостя он
+//  уже применил (ack). Шаги после ack хост ещё не видел — их движение гость
+//  досчитывает сам: танк едет сразу. Стены гость не знает, поэтому если хост
+//  упёрся (жмём, а танк у хоста стоит) — в эту сторону не досчитываем.
+// ============================================================
+const PRED_MAX = 16; // дальше хоста не уезжаем ни при какой задержке
+const Pred = {
+  hist: [], fno: -1, newFrame: false, px: null, py: null, stuck: 0,
+  step(seq, dir, dt) { this.hist.push({ seq, dir, dt }); if (this.hist.length > 240) this.hist.shift(); },
+  frame(fno) { this.newFrame = fno !== this.fno; this.fno = fno; },
+  // сдвиг рисования [dx, dy] в целых пикселях
+  shift(x, y, dir, speed, ack) {
+    const H = this.hist;
+    while (H.length > 1 && H[1].seq <= ack) H.shift(); // H[0] — последний применённый хостом шаг (или старее)
+    if (this.newFrame) {
+      const acked = H.length && H[0].seq <= ack ? H[0].dir : -1;
+      this.stuck = x === this.px && y === this.py && acked === dir && acked >= 0 ? this.stuck + 1 : 0;
+      this.px = x; this.py = y; this.newFrame = false;
+    }
+    let dx = 0, dy = 0;
+    for (const h of H) {
+      if (h.seq <= ack || h.dir < 0 || (h.dir === dir && this.stuck >= 2)) continue;
+      dx += DX[h.dir] * speed * h.dt; dy += DY[h.dir] * speed * h.dt;
+    }
+    dx = clamp(dx, -PRED_MAX, PRED_MAX); dy = clamp(dy, -PRED_MAX, PRED_MAX);
+    return [Math.round(x + dx) - Math.round(x), Math.round(y + dy) - Math.round(y)];
+  },
 };
 
 // ============================================================
@@ -363,24 +437,45 @@ const Remote = {
     const m = Rec.frame(performance.now());
     if (!m) return;
     const to = list.filter(g => g.scrReady);
-    // гость не успевает принимать — экранную часть кадра ему пропускаем, картинки шлём всегда
-    const slow = to.filter(g => g.scr.bufferedAmount > 256 * 1024), fast = to.filter(g => !slow.includes(g));
-    const send = (msg, gs) => {
-      if (!gs.length) return;
-      Rec.chain = Rec.chain.then(() => remZip(msg)).then(z => {
-        for (const g of gs) {
-          if (g.scr.readyState !== 'open') continue;
-          try {
-            for (let k = 0; k < z.length || k === 0; k += REM_CHUNK) {
-              const part = z.subarray(k, k + REM_CHUNK), out = new Uint8Array(part.length + 1);
-              out[0] = k + REM_CHUNK < z.length ? 1 : 0; out.set(part, 1);
-              g.scr.send(out);
-            }
-          } catch (e) { /* канал закрылся */ }
-        }
+    if (m.core.length) this.seq++;
+    const seq = this.seq, fno = ++this.fno;
+    const lossy = g => g.frm && g.frm.readyState === 'open';
+    // без канала кадров (старый браузер) — кадр вместе со снимками; не успевает принимать — кадр пропускаем
+    const old = to.filter(g => !lossy(g) && g.scr.bufferedAmount <= 256 * 1024);
+    const rest = to.filter(g => !old.includes(g));
+    const w = new RemW(); w.v(seq); w.v(m.core.length); const head = w.take();
+    if (old.length) this.sendRel(remJoin(head, m.core, m.main), old);
+    if (m.core.length && rest.length) this.sendRel(remJoin(head, m.core), rest);
+    const fr = to.filter(g => lossy(g) && g.frm.bufferedAmount < 64 * 1024);
+    if (fr.length) {
+      w.v(seq); w.v(fno);
+      remPack(remJoin(w.take(), m.main)).then(({ z, zip }) => {
+        if (z.length > REM_FRM_MAX) return;
+        const out = new Uint8Array(z.length + 1); out[0] = zip ? 2 : 0; out.set(z, 1);
+        for (const g of fr) if (g.frm.readyState === 'open') try { g.frm.send(out); } catch (e) { /* канал закрылся */ }
       }, () => {});
-    };
-    send(m.full, fast);
-    send(m.coreOnly, slow);
+    }
+  },
+  seq: 0, fno: 0,
+  // надёжный канал: по порядку, кусками
+  sendRel(msg, gs) {
+    Rec.chain = Rec.chain.then(() => remPack(msg)).then(({ z, zip }) => {
+      for (const g of gs) {
+        if (g.scr.readyState !== 'open') continue;
+        try {
+          for (let k = 0; k < z.length || k === 0; k += REM_CHUNK) {
+            const part = z.subarray(k, k + REM_CHUNK), out = new Uint8Array(part.length + 1);
+            out[0] = (k + REM_CHUNK < z.length ? 1 : 0) | (zip ? 2 : 0); out.set(part, 1);
+            g.scr.send(out);
+          }
+        } catch (e) { /* канал закрылся */ }
+      }
+    }, () => {});
   },
 };
+function remJoin(...a) {
+  let n = 0; for (const x of a) n += x.length;
+  const u = new Uint8Array(n); n = 0;
+  for (const x of a) { u.set(x, n); n += x.length; }
+  return u;
+}
