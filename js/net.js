@@ -1,8 +1,9 @@
 'use strict';
 // ============================================================
 //  NET: онлайн-кооп через WebRTC.
-//  Хост ведёт игру как обычно и транслирует картинку со звуком
-//  каждому гостю видеопотоком. Гость присылает только свои кнопки —
+//  Хост ведёт игру как обычно и шлёт каждому гостю команды рисования
+//  своего экрана (remote.js) — гость повторяет их, картинка чёткая, без
+//  видео; звук идёт аудиопотоком. Гость присылает только свои кнопки —
 //  у хоста они нажимают коды NetI* (см. DEVICES в core.js), поэтому
 //  гость входит в лобби и играет как ещё одно устройство.
 //
@@ -140,8 +141,8 @@ function iceDone(pc, ms) {
 const Net = {
   role: null, bus: null, code: '', status: '', failed: false, startT: 0,
   guests: [],           // хост: место гостя (0..4) -> { gid, pc, dc }
-  stream: null, audio: null, cap: null, capG: null, qr: null,
-  pc: null, dc: null, gid: '', video: null, info: null, statT: 0, bits: -1, sendT: 0, waitT: 0, joinT: 0, slot: -1, offerT: 0, // гость
+  audio: null, qr: null,
+  pc: null, dc: null, gid: '', sound: null, info: null, statT: 0, bits: -1, sendT: 0, waitT: 0, joinT: 0, slot: -1, offerT: 0, // гость
 
   get open() { return !!(this.bus && this.bus.count); },
   hosting() { return this.role === 'host' && this.open; },
@@ -184,7 +185,7 @@ const Net = {
       if (g && !g.answered) {
         g.answered = true;
         for (const t of sdpTypes(d.sdp.sdp)) g.seen.rem.add(t);
-        g.pc.setRemoteDescription(d.sdp).then(() => { iceFlush(g.pc, g.queue); this.tuneSenders(g.pc); }).catch(() => this.dropGuest(g));
+        g.pc.setRemoteDescription(d.sdp).then(() => iceFlush(g.pc, g.queue)).catch(() => this.dropGuest(g));
       }
     } else if (d.t === 'cand' && d.g) {
       const g = this.guests.find(x => x && x.gid === d.g);
@@ -195,11 +196,12 @@ const Net = {
     const pc = new RTCPeerConnection(NET_ICE);
     const g = this.guests[slot] = { gid, pc, dc: null, slot, live: false, answered: false, queue: [], seen: { loc: new Set(), rem: new Set() } };
     iceTrickle(pc, c => this.bus.pub(this.topic('g/' + gid), { t: 'cand', c }), g.seen);
-    const st = this.getStream();
-    for (const t of st.getTracks()) pc.addTrack(t, st);
-    // звук — отдельным потоком: иначе гость придерживает картинку, подгоняя её под звук
-    if (this.audio) for (const t of this.audio.getTracks()) pc.addTrack(t, this.audio);
+    const au = this.getAudio();
+    if (au) for (const t of au.getTracks()) pc.addTrack(t, au);
     const dc = g.dc = pc.createDataChannel('in');
+    const scr = pc.createDataChannel('scr'); // экран: команды рисования
+    scr.binaryType = 'arraybuffer';
+    scr.onopen = () => { g.scr = scr; Remote.add(g); };
     dc.onopen = () => { g.live = true; dc.send(JSON.stringify({ t: 'hi', slot })); Sound.play('pickup'); };
     dc.onmessage = e => { let d; try { d = JSON.parse(e.data); } catch (er) { return; } if (d.t === 'in') this.applyBits(slot, d.b | 0); };
     dc.onclose = () => this.dropGuest(g);
@@ -224,26 +226,10 @@ const Net = {
     try { g.pc.close(); } catch (e) { /* уже закрыт */ }
     if (g.live) { lobbyDrop(DEVICES.findIndex(d => d.net === g.slot)); Sound.play('deny'); }
   },
-  // пиксель-арт: лучше реже кадры, чем мыло — держим полное разрешение
-  tuneSenders(pc) {
-    for (const s of pc.getSenders()) {
-      if (!s.track || s.track.kind !== 'video' || !s.getParameters) continue;
-      try {
-        const p = s.getParameters();
-        p.degradationPreference = 'maintain-resolution';
-        if (p.encodings && p.encodings[0]) p.encodings[0].maxBitrate = 8000000;
-        s.setParameters(p).catch(() => {});
-      } catch (e) { /* старый браузер */ }
-    }
-  },
-  // видеопоток: картинка в 2 раза крупнее (пиксели не мылятся) и звук игры
-  getStream() {
-    if (this.stream) return this.stream;
-    this.cap = mk(W * 2, H * 2); this.capG = this.cap.getContext('2d');
-    this.capG.imageSmoothingEnabled = false;
-    this.capG.drawImage(canvas, 0, 0, W * 2, H * 2);
-    const s = this.cap.captureStream(60);
-    for (const t of s.getVideoTracks()) try { t.contentHint = 'detail'; } catch (e) { /* не поддерживается */ }
+  // звук игры — гостям аудиопотоком
+  getAudio() {
+    if (this.audio !== null) return this.audio;
+    this.audio = false;
     try {
       Sound.unlock();
       if (Sound.ac && Sound.ac.createMediaStreamDestination) {
@@ -252,10 +238,10 @@ const Net = {
         this.audio = dst.stream;
       }
     } catch (e) { /* без звука у гостей */ }
-    return (this.stream = s);
+    return this.audio;
   },
   afterRender() {
-    if (this.role === 'host' && this.capG && this.guests.some(Boolean)) this.capG.drawImage(canvas, 0, 0, W * 2, H * 2);
+    if (this.role === 'host') Remote.frame(this.guests);
   },
   // QR со ссылкой на эту же страницу с ?join=КОД (только если страница открыта не с этого компьютера)
   makeQr() {
@@ -299,9 +285,10 @@ const Net = {
     iceTrickle(pc, c => this.bus.pub(this.topic('host'), { t: 'cand', g: this.gid, c }), this.seen);
     pc.ontrack = e => {
       lowDelay(e.receiver);
-      this.showVideo(new MediaStream(pc.getReceivers().map(r => r.track).filter(t => t && t.readyState === 'live')));
+      if (e.track.kind === 'audio') this.playSound(new MediaStream([e.track]));
     };
     pc.ondatachannel = e => {
+      if (e.channel.label === 'scr') { Play.listen(e.channel); return; }
       const dc = this.dc = e.channel;
       dc.onmessage = m => { let x; try { x = JSON.parse(m.data); } catch (er) { return; } if (x.t === 'hi') this.slot = x.slot; };
       dc.onclose = () => this.fail('СВЯЗЬ С ХОСТОМ ПОТЕРЯНА');
@@ -325,24 +312,19 @@ const Net = {
   fail(msg) {
     if (this.failed) return;
     this.failed = true; this.status = msg;
-    if (this.video) this.video.style.display = 'none';
+    Play.reset();
+    if (this.sound) this.sound.pause();
     if (this.info) this.info.style.display = 'none';
     if (this.pc) try { this.pc.close(); } catch (e) { /* уже закрыт */ }
     if (this.bus) this.bus.close();
   },
-  showVideo(st) {
-    let v = this.video;
+  playSound(st) {
+    let v = this.sound;
     if (!v) {
-      v = this.video = document.createElement('video');
-      v.autoplay = true; v.playsInline = true; v.muted = true; // без жеста браузер не даст играть со звуком
-      v.setAttribute('playsinline', '');
-      Object.assign(v.style, { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 5,
-        background: '#000', imageRendering: 'pixelated', pointerEvents: 'none' });
+      v = this.sound = document.createElement('audio');
+      v.autoplay = true; v.muted = true; // без жеста браузер не даст играть со звуком
       document.body.appendChild(v);
-      const fit = () => { v.style.width = canvas.style.width; v.style.height = canvas.style.height; };
-      addEventListener('resize', () => setTimeout(fit, 0)); fit();
-      // iOS запускает видео со звуком только из касания (по его окончании) — пробуем на каждом,
-      // пока не заиграет со звуком; не разрешил звук — играем хотя бы без него
+      // iOS включает звук только из касания (по его окончании) — пробуем на каждом, пока не заиграет
       const kick = () => {
         if (!v.paused && !v.muted) return;
         v.muted = false;
@@ -350,9 +332,8 @@ const Net = {
       };
       for (const t of ['touchend', 'click', 'keydown']) addEventListener(t, kick, { capture: true });
     }
-    if (v.srcObject !== st) v.srcObject = st;
-    v.play().catch(() => {}); // без звука автозапуск обычно разрешён
-    this.status = '';
+    v.srcObject = st;
+    v.play().catch(() => {});
   },
   updateGuest(dt) {
     this.waitT += dt;
@@ -361,6 +342,7 @@ const Net = {
       return;
     }
     if (!this.bus) return;
+    if (!Remote.ok) { this.fail('БРАУЗЕР УСТАРЕЛ - ОБНОВИТЕ ЕГО'); return; }
     if (!this.pc) {
       // стучимся в комнату, пока хост не ответит
       const n = this.bus.count;
@@ -373,19 +355,11 @@ const Net = {
     }
     const linked = this.pc.connectionState === 'connected' || this.pc.iceConnectionState === 'connected' || this.pc.iceConnectionState === 'completed';
     if (!linked) {
-      if (this.video) this.video.style.display = 'none';
       this.status = 'СОЕДИНЯЕМСЯ С ХОСТОМ...';
       if (this.waitT - this.offerT > 25) this.failIce();
       return;
     }
-    const v = this.video;
-    if (v) {
-      // на паузе видео прячем: вместо системной кнопки ▶ (её не нажать под экранными кнопками) — наша подсказка
-      v.style.display = v.paused ? 'none' : 'block';
-      this.status = v.paused ? 'КОСНИТЕСЬ ЭКРАНА, ЧТОБЫ ВКЛЮЧИТЬ КАРТИНКУ' : '';
-      this.playT = (this.playT || 0) - dt;
-      if (v.paused && this.playT <= 0) { this.playT = 1; v.muted = true; v.play().catch(() => {}); }
-    }
+    this.status = Play.frame ? '' : 'ЖДЁМ КАРТИНКУ...';
     this.statT -= dt;
     if (this.statT <= 0) { this.statT = 1; this.showStats(); }
     if (!this.dc || this.dc.readyState !== 'open') return;
@@ -395,21 +369,20 @@ const Net = {
     this.sendT -= dt;
     if (b !== this.bits || this.sendT <= 0) { this.bits = b; this.sendT = 0.25; try { this.dc.send(JSON.stringify({ t: 'in', b })); } catch (e) { /* канал закрылся */ } }
   },
-  // в углу: как соединены (напрямую или через TURN), пинг и что приходит по видео
+  // в углу: как соединены (напрямую или через TURN), пинг, кадров в секунду и трафик
   async showStats() {
     let r; try { r = await this.pc.getStats(); } catch (e) { return; }
-    let pair = null, vid = null;
-    r.forEach(x => {
-      if (x.type === 'transport' && x.selectedCandidatePairId) pair = r.get(x.selectedCandidatePairId);
-      if (x.type === 'inbound-rtp' && x.kind === 'video') vid = x;
-    });
+    let pair = null;
+    r.forEach(x => { if (x.type === 'transport' && x.selectedCandidatePairId) pair = r.get(x.selectedCandidatePairId); });
     if (!pair) r.forEach(x => { if (x.type === 'candidate-pair' && x.nominated && x.state === 'succeeded') pair = x; });
     const loc = pair && r.get(pair.localCandidateId), rem = pair && r.get(pair.remoteCandidateId);
     const relay = (loc && loc.candidateType === 'relay') || (rem && rem.candidateType === 'relay');
     let s = pair ? (relay ? 'ЧЕРЕЗ TURN' : 'НАПРЯМУЮ') : '';
     if (pair && pair.currentRoundTripTime != null) s += ' · ПИНГ ' + Math.round(pair.currentRoundTripTime * 1000) + ' МС';
-    if (vid && vid.frameWidth) s += ' · ' + vid.frameWidth + '×' + vid.frameHeight + ' · ' + Math.round(vid.framesPerSecond || 0) + ' К/С';
-    if (vid && vid.jitterBufferEmittedCount) s += ' · БУФЕР ' + Math.round(vid.jitterBufferDelay / vid.jitterBufferEmittedCount * 1000) + ' МС';
+    const now = performance.now(), sec = Math.max(0.2, (now - (this.statAt || now - 1000)) / 1000);
+    this.statAt = now;
+    if (pair) s += ' · ' + Math.round(Play.frames / sec) + ' К/С · ' + Math.round(Play.bytes / sec / 1024) + ' КБ/С';
+    Play.frames = 0; Play.bytes = 0;
     let el = this.info;
     if (!el) {
       el = this.info = document.createElement('div');
@@ -420,6 +393,7 @@ const Net = {
     el.textContent = s; el.style.display = s ? 'block' : 'none';
   },
   drawGuest() {
+    if (!this.failed && Play.draw()) return;
     text('ОНЛАЙН', W / 2, 60, '#fcd820', 3, 'center', '#7c4000');
     text(tr('КОМНАТА') + ' ' + this.code, W / 2, 100, '#3cbcfc', 1, 'center');
     text(this.status, W / 2, 120, this.failed ? '#f83800' : (blink(2) ? '#fcfcfc' : '#7c7c7c'), 1, 'center');
