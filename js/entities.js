@@ -472,7 +472,7 @@ class Player extends Tank {
   get shieldR() { return this.tal('shWide') ? 27 : 17; }
   get color() { return PLAYER_PALS[this.colorIdx].ui; }
   get look() { return this.weapon; } // каждая звезда добавляет танку деталь
-  get maxWeapon() { return 5 + (Talents.lv('smith') ? 5 : 0) + (Talents.lv('legend') ? 5 : 0); }
+  get maxWeapon() { return 5 + (this.tal('smith') ? 5 : 0) + (this.tal('legend') ? 5 : 0); }
   get label() { return (this.idx + 1) + 'P'; }
   recalc() {
     const C = CLASSES[this.cls];

@@ -232,6 +232,7 @@ function updateFlow() {
 // ctrls — устройство каждого игрока; в одиночной игре — все устройства сразу
 function newRun(classes, ctrls, colors) {
   G.players = classes.map((c, i) => new Player(i, c, classes.length > 1 && ctrls ? ctrls[i] : ALL_CTRL, colors ? colors[i] : i));
+  for (const p of G.players) p.lv = p.ctrl.net != null ? Net.guestLv(p.ctrl.net) : Talents.data.lv; // онлайн-гость — со своими талантами
   G.depth = 1; G.runTime = 0; G.newRecord = false; G.runMedals = 0;
   G.players.forEach(applyTalents);
   G.startQ = startPicks(); // таланты «на выбор» (стихия, система): экраны выбора до первого сектора
@@ -301,7 +302,7 @@ function sectorClear() {
   G.healMsg = G.info.boss ? 'ПОЛНЫЙ РЕМОНТ' : '+1 ПРОЧНОСТЬ';
   for (const p of G.players) if (!p.dead) p.hp = Math.min(p.maxHp, p.hp + 1 + p.stats.fieldRepair + (G.info.boss ? 99 : 0));
   const m = sectorMedals(G.info); // медали начисляются сразу: выход в меню их не отнимет
-  G.runMedals += m; Talents.add(m);
+  G.runMedals += m; Talents.add(m); Net.sendMedals(m);
   saveBest();
 }
 
@@ -318,15 +319,16 @@ function saveBest() {
 // почему игрок не может взять карту ('' — может)
 function cantReason(p, id) {
   const P = PERKS[id];
-  if ((p.perks[id] || 0) >= (P.aux ? auxLvMax() : P.max)) return 'МАКС.';
+  if (P.myth && !talLv(p, id)) return 'НЕТ ТАЛАНТА';
+  if ((p.perks[id] || 0) >= (P.aux ? auxLvMax(p) : P.max)) return 'МАКС.';
   if ((P.legend || P.myth) && !synReady(p, id)) return 'НЕТ ЧАСТЕЙ';
-  if (P.aux && !p.perks[id] && auxCount(p) >= auxMax()) return 'НЕТ СЛОТА';
+  if (P.aux && !p.perks[id] && auxCount(p) >= auxMax(p)) return 'НЕТ СЛОТА';
   return '';
 }
 const canTake = (p, id) => !cantReason(p, id);
 const ELEM_IDS = ['inc', 'cryo', 'tesla', 'mark'];
 function dealCards() {
-  const n = (G.mod ? 4 : 3) + (Talents.lv('cards') ? 1 : 0), rareRich = G.info.boss;
+  const n = (G.mod ? 4 : 3) + (teamTal('cards') ? 1 : 0), rareRich = G.info.boss;
   const pool = Object.keys(PERKS).filter(id => perkAllowed(id) && G.players.some(p => canTake(p, id)));
   const cards = [];
   while (cards.length < n && pool.length) {
@@ -334,7 +336,7 @@ function dealCards() {
     for (const id of pool) {
       const P = PERKS[id];
       w[id] = P.myth ? 30 : P.legend ? 14 : P.aux ? (rareRich ? 6 : 5) : P.rare ? (rareRich ? 10 : 3) : (rareRich ? 2 : 10);
-      if (ELEM_IDS.includes(id) && Talents.lv('elems')) w[id] *= 2; // «Знаток стихий»
+      if (ELEM_IDS.includes(id) && teamTal('elems')) w[id] *= 2; // «Знаток стихий»
     }
     if (G.players.every(p => p.hp >= p.maxHp) && w.repair) w.repair = 0.5;
     const id = weighted(w);
@@ -343,12 +345,13 @@ function dealCards() {
   return cards;
 }
 // start — id таланта, если это стартовый выбор (стихия или доп. система): карта бесплатная и врагов не усиливает
-function openPerks(cards = dealCards(), start = null) {
+// who — кто выбирает (на стартовом выборе — только те, у кого есть талант)
+function openPerks(cards = dealCards(), start = null, who = null) {
   const first = [0, cards.length - 1, cards.length >> 1, 1, cards.length - 2, 0].map(k => clamp(k, 0, cards.length - 1)); // 1P слева, 2P справа, 3P посередине
-  G.perk = { cards, sel: G.players.map((p, i) => first[i]), done: G.players.map(() => false), t: 0, doneT: 0, start, rerolled: false };
+  G.perk = { cards, sel: G.players.map((p, i) => first[i]), done: G.players.map((p, i) => !!who && !who[i]), t: 0, doneT: 0, start, rerolled: false };
   G.state = 'perk';
 }
-function openStartPick() { const q = G.startQ.shift(); openPerks(q.cards, q.id); }
+function openStartPick() { const q = G.startQ.shift(); openPerks(q.cards, q.id, q.who); }
 
 function gameOver() {
   G.state = 'gameover'; G.overT = 0;
@@ -560,7 +563,7 @@ function updatePerk(dt) {
     }
   });
   // «Пересдача»: раз за сектор, пока никто не взял карту, СПЕЦ перебрасывает карты
-  if (!P.start && !P.rerolled && Talents.lv('reroll') && P.t > 0.5 && !P.done.some(Boolean) && G.players.some(p => Input.hit(p.ctrl.special))) {
+  if (!P.start && !P.rerolled && P.t > 0.5 && !P.done.some(Boolean) && G.players.some(p => talLv(p, 'reroll') && Input.hit(p.ctrl.special))) {
     P.cards = dealCards(); P.rerolled = true;
     P.sel = P.sel.map(k => clamp(k, 0, P.cards.length - 1));
     Sound.play('confirm');
@@ -796,7 +799,7 @@ function drawPerk() {
   } else {
     text('ВЫБЕРИТЕ УЛУЧШЕНИЕ', W / 2, 8, '#fcd820', 2, 'center', '#5c3c00');
     text(tr('СЕКТОР') + ' ' + sectorName(G.depth) + ' ' + tr('ПРОЙДЕН') + (G.info.boss ? ' ' + tr('- РЕДКИЕ НАГРАДЫ!') : ''), W / 2, 27, '#7c7c7c', 1, 'center');
-    if (Talents.lv('reroll') && !P.rerolled && !P.done.some(Boolean)) text('СПЕЦ - ПЕРЕБРОСИТЬ КАРТЫ', W / 2, 36, blink(2) ? '#3cbcfc' : '#3c78a8', 1, 'center');
+    if (teamTal('reroll') && !P.rerolled && !P.done.some(Boolean)) text('СПЕЦ - ПЕРЕБРОСИТЬ КАРТЫ', W / 2, 36, blink(2) ? '#3cbcfc' : '#3c78a8', 1, 'center');
   }
   const n = P.cards.length, gap = 6, cw = Math.floor((W - 24 - gap * (n - 1)) / n), ch = 160, y0 = 46;
   for (let i = 0; i < n; i++) drawCard(P, i, 12 + i * (cw + gap), y0, cw, ch);

@@ -76,7 +76,7 @@ const EN = {
   '←/→ ВЫБОР   ПРОБЕЛ/ENTER - ВЗЯТЬ': '←/→ CHOOSE   SPACE/ENTER - TAKE',
   'ЛЕГЕНДАРНОЕ': 'LEGENDARY', 'СИСТЕМА': 'SYSTEM', 'РЕДКОЕ': 'RARE', 'ОБЫЧНОЕ': 'COMMON',
   'СИНЕРГИЯ!': 'SYNERGY!', 'В СИНЕРГИИ': 'IN SYNERGY', 'ВЗЯТО': 'TAKEN',
-  'МАКС.': 'MAX', 'НЕТ ЧАСТЕЙ': 'NO PARTS', 'НЕТ СЛОТА': 'NO SLOT',
+  'МАКС.': 'MAX', 'НЕТ ЧАСТЕЙ': 'NO PARTS', 'НЕТ СЛОТА': 'NO SLOT', 'НЕТ ТАЛАНТА': 'NO TALENT',
   'В СТРОЮ!': 'BACK IN!', 'ОРУЖИЕ УР.': 'WEAPON LV.',
   'КОНЕЦ': 'GAME OVER', 'ЗАБЕГ ОКОНЧЕН НА СЕКТОРЕ': 'RUN ENDED AT SECTOR', 'ОГОНЬ - В МЕНЮ': 'FIRE - MENU',
   'ОБЩИЙ СЧЁТ:': 'TOTAL SCORE:', 'ВРЕМЯ:': 'TIME:', 'НОВЫЙ РЕКОРД!': 'NEW RECORD!',

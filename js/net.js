@@ -5,7 +5,9 @@
 //  своего экрана (remote.js) — гость повторяет их, картинка чёткая, без
 //  видео; звук идёт аудиопотоком. Гость присылает только свои кнопки —
 //  у хоста они нажимают коды NetI* (см. DEVICES в core.js), поэтому
-//  гость входит в лобби и играет как ещё одно устройство.
+//  гость входит в лобби и играет как ещё одно устройство. При подключении
+//  гость присылает свои таланты (его танк играет с ними), а хост шлёт ему
+//  медали за каждый пройденный сектор — они копятся на устройстве гостя.
 //
 //  Знакомство (обмен описаниями соединения) идёт через публичные
 //  MQTT-серверы — сразу через несколько, у разных компаний: хватит,
@@ -203,7 +205,7 @@ const Net = {
     scr.binaryType = 'arraybuffer';
     scr.onopen = () => { g.scr = scr; Remote.add(g); };
     dc.onopen = () => { g.live = true; dc.send(JSON.stringify({ t: 'hi', slot })); Sound.play('pickup'); };
-    dc.onmessage = e => { let d; try { d = JSON.parse(e.data); } catch (er) { return; } if (d.t === 'in') this.applyBits(slot, d.b | 0); };
+    dc.onmessage = e => { let d; try { d = JSON.parse(e.data); } catch (er) { return; } if (d.t === 'in') this.applyBits(slot, d.b | 0); else if (d.t === 'tal') g.lv = cleanLv(d.lv); };
     dc.onclose = () => this.dropGuest(g);
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed' || pc.connectionState === 'closed') this.dropGuest(g); };
     setTimeout(() => { if (!g.live) this.dropGuest(g); }, 30000); // гость так и не подключился — освобождаем место
@@ -218,6 +220,15 @@ const Net = {
       const code = 'Net' + slot + k;
       if (b & (1 << i)) Input.press(code); else if (Input.down[code]) Input.release(code);
     });
+  },
+  guestLv(slot) { const g = this.guests[slot]; return (g && g.lv) || {}; },
+  // медали за сектор — гостям, чьи танки в забеге
+  sendMedals(n) {
+    if (this.role !== 'host') return;
+    for (const p of G.players) {
+      const g = p.ctrl.net != null && this.guests[p.ctrl.net];
+      if (g && g.live) try { g.dc.send(JSON.stringify({ t: 'medals', n })); } catch (e) { /* канал закрылся */ }
+    }
   },
   dropGuest(g) {
     if (this.guests[g.slot] !== g) return;
@@ -290,7 +301,11 @@ const Net = {
     pc.ondatachannel = e => {
       if (e.channel.label === 'scr') { Play.listen(e.channel); return; }
       const dc = this.dc = e.channel;
-      dc.onmessage = m => { let x; try { x = JSON.parse(m.data); } catch (er) { return; } if (x.t === 'hi') this.slot = x.slot; };
+      dc.onmessage = m => {
+        let x; try { x = JSON.parse(m.data); } catch (er) { return; }
+        if (x.t === 'hi') { this.slot = x.slot; try { dc.send(JSON.stringify({ t: 'tal', lv: Talents.data.lv })); } catch (er) { /* канал закрылся */ } }
+        else if (x.t === 'medals' && x.n > 0) Talents.add(Math.min(x.n | 0, 20));
+      };
       dc.onclose = () => this.fail('СВЯЗЬ С ХОСТОМ ПОТЕРЯНА');
     };
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') this.failIce(); };

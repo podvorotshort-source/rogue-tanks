@@ -2,7 +2,8 @@
 // ============================================================
 //  TALENTS: постоянное дерево талантов между забегами.
 //  Медали дают за сектора и боссов, тратятся на таланты в трёх ветках.
-//  Таланты общие на устройство: их получают все игроки хоста, в т.ч. онлайн-гости.
+//  Таланты хранятся на устройстве: их получают игроки этого устройства, а онлайн-гость
+//  играет со своими — присылает их хосту при подключении (p.lv у каждого танка).
 //  Ярус ветки открывается, когда в нижние ярусы этой ветки вложено TAL_GATES[ярус] медалей.
 // ============================================================
 
@@ -151,12 +152,22 @@ const Talents = {
   },
 };
 // уровень таланта для конкретного танка: классовые действуют только на свой класс
-function talOf(p, id) { const T = TALENTS[id]; return T.cls && T.cls !== p.cls ? 0 : Talents.lv(id); }
-// легендарная карта доступна в игре, только если её суперсинергия изучена
-const perkAllowed = id => !PERKS[id].myth || Talents.lv(id) > 0;
-const auxMax = () => 2 + (Talents.lv('slot3') ? 1 : 0);
+// p.lv — уровни талантов владельца танка (у онлайн-гостя — его собственные)
+const talLv = (p, id) => (p.lv || Talents.data.lv)[id] || 0;
+function talOf(p, id) { const T = TALENTS[id]; return T.cls && T.cls !== p.cls ? 0 : talLv(p, id); }
+// общие для команды (одна раздача карт на всех): действуют, если талант есть хоть у одного игрока
+const teamTal = id => G.players.some(p => talLv(p, id) > 0);
+// легендарная карта: в раздачу попадает, если суперсинергию изучил кто-то, а взять её может только он
+const perkAllowed = id => !PERKS[id].myth || teamTal(id);
+const auxMax = p => 2 + (talLv(p, 'slot3') ? 1 : 0);
 // предел уровня доп. систем: 3, «Конструктор» — 4, «Главный инженер» — 5
-const auxLvMax = () => 3 + (Talents.lv('constr') ? 1 : 0) + (Talents.lv('engineer') ? 1 : 0);
+const auxLvMax = p => 3 + (talLv(p, 'constr') ? 1 : 0) + (talLv(p, 'engineer') ? 1 : 0);
+// таланты, присланные гостем: только известные и не выше максимума
+function cleanLv(lv) {
+  const r = {};
+  if (lv && typeof lv === 'object') for (const id of TAL_LIST) { const n = lv[id] | 0; if (n > 0) r[id] = Math.min(n, TALENTS[id].cost.length); }
+  return r;
+}
 // обновление v4: таланты и медали у всех сброшены — все начинают заново с 20 медалями
 if ((Talents.data.v || 0) < 4) { Talents.data = { medals: 20, lv: {}, v: 4 }; Talents.save(); }
 
@@ -175,9 +186,9 @@ function applyTalents(p) {
   p.maxHp += talOf(p, 'hp'); p.hp = p.maxHp;
   for (const id of TAL_LIST) {
     const T = TALENTS[id];
-    if (T.kind === 'start' && Talents.lv(id) && !p.perks[T.card]) { p.perks[T.card] = 1; p.base[T.card] = 1; if (PERKS[T.card].onPick) PERKS[T.card].onPick(p); }
+    if (T.kind === 'start' && talLv(p, id) && !p.perks[T.card]) { p.perks[T.card] = 1; p.base[T.card] = 1; if (PERKS[T.card].onPick) PERKS[T.card].onPick(p); }
   }
-  p.weapon = p.baseWeapon = Math.min(Talents.lv('star'), p.maxWeapon);
+  p.weapon = p.baseWeapon = Math.min(talLv(p, 'star'), p.maxWeapon);
   p.charges = p.maxCh;
   p.recalc();
 }
@@ -192,14 +203,14 @@ function talentStats(p, s) {
   if (t('luck')) s.luck *= 1.25;
   if (t('shCd') || t('vlCd') || t('dsCd')) s.cdMul *= 0.8;
 }
-// очередь стартовых выборов (стихия, система) — по одному экрану на талант
+// очередь стартовых выборов (стихия, система) — по одному экрану на талант; who — кто из игроков выбирает
 function startPicks() {
   const q = [];
   for (const id of TAL_LIST) {
-    const T = TALENTS[id];
-    if (T.kind !== 'pick' || !Talents.lv(id)) continue;
+    const T = TALENTS[id], who = G.players.map(p => talLv(p, id) > 0);
+    if (T.kind !== 'pick' || !who.some(Boolean)) continue;
     const cards = T.cards === 'aux' ? AUX_IDS.slice().sort(() => Math.random() - 0.5).slice(0, 4) : T.cards.slice();
-    q.push({ id, cards });
+    q.push({ id, cards, who });
   }
   return q;
 }
