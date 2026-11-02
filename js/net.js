@@ -13,13 +13,15 @@
 //  'frm' — без повторов: кнопки гостя каждый шаг и кадры экрана. Потерянное
 //  не пересылается — следом уже идёт свежее, и ничто не ждёт старого пакета.
 //
-//  Знакомство (обмен описаниями соединения) идёт через публичные
-//  MQTT-серверы — сразу через несколько, у разных компаний: хватит,
-//  чтобы оба устройства достучались хотя бы до одного. Дальше связь
+//  Знакомство (обмен описаниями соединения) идёт через ntfy.sh (порт 443,
+//  проходит и через мобильные сети) и публичные MQTT-серверы — сразу через
+//  несколько, у разных компаний: хватит, чтобы оба устройства достучались
+//  хотя бы до одного. Дальше связь
 //  напрямую, серверы больше не нужны.
 // ============================================================
 
 const NET_TOPIC = 'tanks8bit-rogue/v1/';
+const NET_NTFY = 'https://ntfy.sh/';
 const NET_BROKERS = [
   'wss://broker.emqx.io:8084/mqtt',
   'wss://broker.hivemq.com:8884/mqtt',
@@ -120,16 +122,53 @@ class Mqtt {
     }
   }
 }
+// ntfy.sh — тоже почтовый ящик, но на обычном порту 443 (HTTPS): его не режут мобильные сети,
+// в отличие от портов 8084/8884/8081 у MQTT-серверов. Приём — WebSocket, отправка — POST.
+// Сообщение больше NTFY_PART режем на куски «~id~k~n~кусок» (у ntfy предел ~4 КБ)
+const NTFY_PART = 3500;
+class Ntfy {
+  constructor(url, onMsg) { this.url = url; this.onMsg = onMsg; this.ok = false; this.wait = 3000; this.dead = false; this.subs = new Map(); this.parts = new Map(); }
+  name(topic) { return topic.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 64); }
+  sub(topic) { if (!this.subs.has(topic)) this.open(topic); }
+  open(topic) {
+    if (this.dead) return;
+    let ws;
+    try { ws = new WebSocket(this.url.replace(/^http/, 'ws') + this.name(topic) + '/ws'); } catch (e) { return; }
+    this.subs.set(topic, ws);
+    ws.onopen = () => { this.ok = true; this.wait = 3000; };
+    ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } if (m.event === 'message' && m.message) this.got(topic, m.message); };
+    ws.onclose = () => {
+      this.ok = [...this.subs.values()].some(w => w !== ws && w.readyState === 1);
+      if (!this.dead) { setTimeout(() => this.open(topic), this.wait); this.wait = Math.min(30000, this.wait * 2); }
+    };
+  }
+  got(topic, s) {
+    const k = /^~(\w+)~(\d+)~(\d+)~/.exec(s);
+    if (!k) { this.onMsg(topic, s); return; }
+    let P = this.parts.get(k[1]);
+    if (!P) { P = []; this.parts.set(k[1], P); setTimeout(() => this.parts.delete(k[1]), 30000); }
+    P[+k[2]] = s.slice(k[0].length);
+    if (P.filter(x => x != null).length === +k[3]) { this.parts.delete(k[1]); this.onMsg(topic, P.join('')); }
+  }
+  pub(topic, text) {
+    const url = this.url + this.name(topic), post = body => fetch(url, { method: 'POST', body }).catch(() => {});
+    if (text.length <= NTFY_PART) { post(text); return; }
+    const id = netId(), n = Math.ceil(text.length / NTFY_PART);
+    for (let k = 0; k < n; k++) post('~' + id + '~' + k + '~' + n + '~' + text.slice(k * NTFY_PART, (k + 1) * NTFY_PART));
+  }
+  close() { this.dead = true; for (const ws of this.subs.values()) try { ws.close(); } catch (e) { /* уже закрыт */ } }
+}
 // все серверы сразу: шлём во все, повторы одного сообщения отбрасываем
 class SignalBus {
   constructor(onMsg) {
     this.seen = new Set();
-    this.links = NET_BROKERS.map(u => new Mqtt(u, (t, m) => {
+    const got = (t, m) => {
       let d; try { d = JSON.parse(m); } catch (e) { return; }
       if (!d || !d.i || this.seen.has(d.i)) return;
       this.seen.add(d.i);
       onMsg(t, d);
-    }));
+    };
+    this.links = [new Ntfy(NET_NTFY, got), ...NET_BROKERS.map(u => new Mqtt(u, got))];
   }
   get count() { return this.links.filter(l => l.ok).length; }
   sub(topic) { for (const l of this.links) l.sub(topic); }
@@ -378,7 +417,7 @@ const Net = {
       // стучимся в комнату, пока хост не ответит
       const n = this.bus.count;
       if (!n) { this.status = 'ПОДКЛЮЧЕНИЕ...'; if (this.waitT > 10) this.fail('НЕТ СВЯЗИ С СЕРВЕРАМИ'); return; }
-      this.status = tr('ИЩЕМ КОМНАТУ...') + ' (' + n + '/' + NET_BROKERS.length + ')';
+      this.status = tr('ИЩЕМ КОМНАТУ...') + ' (' + n + '/' + (NET_BROKERS.length + 1) + ')';
       this.joinT -= dt;
       if (this.joinT <= 0) { this.joinT = 2; this.bus.pub(this.topic('host'), { t: 'join', g: this.gid }); }
       if (this.waitT > 20) this.fail('КОМНАТА НЕ НАЙДЕНА');

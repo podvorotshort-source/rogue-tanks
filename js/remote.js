@@ -178,13 +178,16 @@ const Rec = {
     this.core.b(OP_RESET);
     this.state(this.main, ctx, 0);
   },
-  // танк онлайн-гостя: гость сдвинет его туда, куда уже нажал (Pred); x, y — где он у хоста
-  mark(g, p) {
+  // танк онлайн-гостя: гость сдвинет и повернёт его так, как уже нажал (Pred); x, y — где он у хоста,
+  // spr — картинки танка на 4 стороны: гость подменит ими картинку хоста; room — сколько места до препятствия
+  mark(g, p, spr) {
     if (this.cinfo(g).id !== 0) return false;
-    const w = this.tgt(this.main, 0), gu = Net.guests[p.ctrl.net];
+    const ids = spr.map(c => this.img(c)), w = this.tgt(this.main, 0), gu = Net.guests[p.ctrl.net];
     w.b(OP_MARK); w.b(1); w.v(p.ctrl.net); w.i(Math.round(p.x * 4)); w.i(Math.round(p.y * 4)); w.b(p.dir);
     w.f(p.stats.speed); w.v(gu ? gu.inSeq : 0);
     w.b(G.state === 'play' && !G.paused && p.dashT <= 0 ? 1 : 0);
+    for (const id of ids) w.v(id);
+    for (let d = 0; d < 4; d++) w.b(freeRun(p, d));
     return true;
   },
   unmark() { const w = this.tgt(this.main, 0); w.b(OP_MARK); w.b(0); },
@@ -255,6 +258,15 @@ const Rec = {
 // ============================================================
 //  ГОСТЬ: повтор
 // ============================================================
+// сколько пикселей (до PRED_MAX) танк проедет в сторону d — с выравниванием по сетке при повороте, как Tank.turn
+function freeRun(p, d) {
+  let x = p.x, y = p.y, n = 0;
+  if ((d & 1) !== (p.dir & 1)) {
+    if (d & 1) { const sy = Math.round(y / 8) * 8; if (p.free(x, sy)) y = sy; } else { const sx = Math.round(x / 8) * 8; if (p.free(sx, y)) x = sx; }
+  }
+  while (n < PRED_MAX && p.free(x + DX[d] * (n + 1), y + DY[d] * (n + 1))) n++;
+  return n;
+}
 // сообщение: [флаги][данные], флаги: 1 — продолжение следует (только 'scr'), 2 — данные сжаты
 const Play = {
   cv: new Map(), pats: new Map(), frame: null, parts: [], chain: Promise.resolve(), mk: null,
@@ -304,11 +316,18 @@ const Play = {
   draw() {
     if (!this.frame) return false;
     ctx.save();
-    Pred.frame(this.fno); this.mk = null;
+    this.mk = null;
     this.run(new RemR(this.frame), this.frame.length, ctx);
     ctx.restore();
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     return true;
+  },
+  // свой танк: картинку стороны, куда смотрит у хоста, — на сторону, куда уже повернули
+  turn(a) {
+    const [, , pdir, spr, hdir] = this.mk;
+    if (pdir === hdir) return;
+    const C = this.cv.get(spr[hdir]), N = this.cv.get(spr[pdir]);
+    if (C && N && a[0] === C.c) a[0] = N.c;
   },
   ctxOf(id) { if (id === 0) return ctx; const C = this.cv.get(id); return C ? C.g : null; },
   // аргументы команды; undefined — картинки нет, команду пропускаем
@@ -331,7 +350,11 @@ const Play = {
   run(r, end, g) {
     while (r.n < end) {
       const op = r.b();
-      if (op < OP_PROP) { const a = this.args(r); if (g && a) try { g[REM_M[op]](...a); } catch (e) { /* пропуск */ } }
+      if (op < OP_PROP) {
+        const a = this.args(r);
+        if (op === 0 && a && this.mk) this.turn(a);
+        if (g && a) try { g[REM_M[op]](...a); } catch (e) { /* пропуск */ }
+      }
       else if (op < OP_TGT) { const a = this.args(r); if (g && a) try { g[REM_P[op - OP_PROP]] = a[0]; } catch (e) { /* пропуск */ } }
       else if (op === OP_TGT) g = this.ctxOf(r.v());
       else if (op === OP_MAC) {
@@ -342,8 +365,9 @@ const Play = {
       } else if (op === OP_MARK) {
         if (!r.b()) { if (g && this.mk) g.translate(-this.mk[0], -this.mk[1]); this.mk = null; continue; }
         const slot = r.v(), x = r.i() / 4, y = r.i() / 4, dir = r.b(), speed = r.f(), ack = r.v(), live = r.b();
-        this.mk = g && slot === Net.slot && live ? Pred.shift(x, y, dir, speed, ack) : null;
-        if (this.mk) g.translate(this.mk[0], this.mk[1]);
+        const spr = [r.v(), r.v(), r.v(), r.v()], room = [r.b(), r.b(), r.b(), r.b()];
+        this.mk = g && slot === Net.slot && live ? Pred.shift(x, y, dir, speed, ack, room) : null;
+        if (this.mk) { this.mk.push(spr, dir); g.translate(this.mk[0], this.mk[1]); }
       } else if (op === OP_SNAP) this.snap(r);
       else if (op === OP_STATE) this.state(r);
       else if (op === OP_PAT) {
@@ -391,31 +415,30 @@ const Play = {
 // ============================================================
 //  ГОСТЬ: предсказание своего танка
 //  Хост присылает, где танк у него и какой последний шаг кнопок гостя он
-//  уже применил (ack). Шаги после ack хост ещё не видел — их движение гость
-//  досчитывает сам: танк едет сразу. Стены гость не знает, поэтому если хост
-//  упёрся (жмём, а танк у хоста стоит) — в эту сторону не досчитываем.
+//  уже применил (ack). Шаги после ack хост ещё не видел — их гость
+//  досчитывает сам, как хост: поворот (с выравниванием по сетке 8) и ход.
+//  Танк поворачивает и едет сразу. Стены и чужие танки гость не знает —
+//  хост присылает, сколько места у танка в каждую сторону (room).
 // ============================================================
 const PRED_MAX = 16; // дальше хоста не уезжаем ни при какой задержке
 const Pred = {
-  hist: [], fno: -1, newFrame: false, px: null, py: null, stuck: 0,
+  hist: [],
   step(seq, dir, dt) { this.hist.push({ seq, dir, dt }); if (this.hist.length > 240) this.hist.shift(); },
-  frame(fno) { this.newFrame = fno !== this.fno; this.fno = fno; },
-  // сдвиг рисования [dx, dy] в целых пикселях
-  shift(x, y, dir, speed, ack) {
+  // [dx, dy, сторона]: сдвиг рисования в целых пикселях и куда танк смотрит
+  shift(x, y, dir, speed, ack, room) {
     const H = this.hist;
-    while (H.length > 1 && H[1].seq <= ack) H.shift(); // H[0] — последний применённый хостом шаг (или старее)
-    if (this.newFrame) {
-      const acked = H.length && H[0].seq <= ack ? H[0].dir : -1;
-      this.stuck = x === this.px && y === this.py && acked === dir && acked >= 0 ? this.stuck + 1 : 0;
-      this.px = x; this.py = y; this.newFrame = false;
-    }
-    let dx = 0, dy = 0;
+    while (H.length && H[0].seq <= ack) H.shift(); // эти шаги хост уже применил
+    let px = x, py = y, pd = dir;
     for (const h of H) {
-      if (h.seq <= ack || h.dir < 0 || (h.dir === dir && this.stuck >= 2)) continue;
-      dx += DX[h.dir] * speed * h.dt; dy += DY[h.dir] * speed * h.dt;
+      if (h.seq <= ack || h.dir < 0) continue;
+      if (h.dir !== pd) { // поворот, как Tank.turn: на поперечную ось — выравнивание по сетке
+        if ((h.dir & 1) !== (pd & 1)) { if (h.dir & 1) py = Math.round(py / 8) * 8; else px = Math.round(px / 8) * 8; }
+        pd = h.dir;
+      }
+      px += DX[h.dir] * speed * h.dt; py += DY[h.dir] * speed * h.dt;
     }
-    dx = clamp(dx, -PRED_MAX, PRED_MAX); dy = clamp(dy, -PRED_MAX, PRED_MAX);
-    return [Math.round(x + dx) - Math.round(x), Math.round(y + dy) - Math.round(y)];
+    px = clamp(px, x - room[3], x + room[1]); py = clamp(py, y - room[0], y + room[2]);
+    return [Math.round(px) - Math.round(x), Math.round(py) - Math.round(y), pd];
   },
 };
 
