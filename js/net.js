@@ -22,7 +22,11 @@ const NET_BROKERS = [
 const NET_QR_LIB = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
 // STUN — узнать свой внешний адрес, чтобы соединиться напрямую.
 // TURN (ретранслятор на случай, когда напрямую не пробиться) добавляется в NET_TURN
-const NET_TURN = [];
+const NET_TURN = [{
+  urls: ['turn:free.expressturn.com:3478?transport=udp', 'turn:free.expressturn.com:3478?transport=tcp'],
+  username: '000000002109079815',
+  credential: '1etaRCRz9uL6cFYHPiZQQER5bU4=',
+}];
 const NET_ICE = { iceServers: [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:3478'] },
   ...NET_TURN,
