@@ -45,6 +45,11 @@ function iceAdd(pc, c, queue, seen) {
   pc.addIceCandidate(c).catch(() => {});
 }
 function iceFlush(pc, queue) { for (const c of queue.splice(0)) pc.addIceCandidate(c).catch(() => {}); }
+// гость: показывать кадр сразу, не копить запас на случай рывков сети
+function lowDelay(r) {
+  try { if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0; } catch (e) { /* не поддерживается */ }
+  try { r.playoutDelayHint = 0; } catch (e) { /* не поддерживается */ }
+}
 const iceList = set => [...set].filter(Boolean).join(',') || '-';
 const NET_KEYS = ['Up', 'Down', 'Left', 'Right', 'A', 'B', 'Start'];
 const NET_START = ['Escape', 'KeyP', 'TouchStart', ...PAD_STARTS];
@@ -135,8 +140,8 @@ function iceDone(pc, ms) {
 const Net = {
   role: null, bus: null, code: '', status: '', failed: false, startT: 0,
   guests: [],           // хост: место гостя (0..4) -> { gid, pc, dc }
-  stream: null, cap: null, capG: null, qr: null,
-  pc: null, dc: null, gid: '', video: null, bits: -1, sendT: 0, waitT: 0, joinT: 0, slot: -1, offerT: 0, // гость
+  stream: null, audio: null, cap: null, capG: null, qr: null,
+  pc: null, dc: null, gid: '', video: null, info: null, statT: 0, bits: -1, sendT: 0, waitT: 0, joinT: 0, slot: -1, offerT: 0, // гость
 
   get open() { return !!(this.bus && this.bus.count); },
   hosting() { return this.role === 'host' && this.open; },
@@ -192,6 +197,8 @@ const Net = {
     iceTrickle(pc, c => this.bus.pub(this.topic('g/' + gid), { t: 'cand', c }), g.seen);
     const st = this.getStream();
     for (const t of st.getTracks()) pc.addTrack(t, st);
+    // звук — отдельным потоком: иначе гость придерживает картинку, подгоняя её под звук
+    if (this.audio) for (const t of this.audio.getTracks()) pc.addTrack(t, this.audio);
     const dc = g.dc = pc.createDataChannel('in');
     dc.onopen = () => { g.live = true; dc.send(JSON.stringify({ t: 'hi', slot })); Sound.play('pickup'); };
     dc.onmessage = e => { let d; try { d = JSON.parse(e.data); } catch (er) { return; } if (d.t === 'in') this.applyBits(slot, d.b | 0); };
@@ -224,7 +231,7 @@ const Net = {
       try {
         const p = s.getParameters();
         p.degradationPreference = 'maintain-resolution';
-        if (p.encodings && p.encodings[0]) p.encodings[0].maxBitrate = 3000000;
+        if (p.encodings && p.encodings[0]) p.encodings[0].maxBitrate = 8000000;
         s.setParameters(p).catch(() => {});
       } catch (e) { /* старый браузер */ }
     }
@@ -242,7 +249,7 @@ const Net = {
       if (Sound.ac && Sound.ac.createMediaStreamDestination) {
         const dst = Sound.ac.createMediaStreamDestination();
         Sound.master.connect(dst);
-        for (const t of dst.stream.getAudioTracks()) s.addTrack(t);
+        this.audio = dst.stream;
       }
     } catch (e) { /* без звука у гостей */ }
     return (this.stream = s);
@@ -290,7 +297,10 @@ const Net = {
     const pc = this.pc = new RTCPeerConnection(NET_ICE);
     for (const t of sdpTypes(d.sdp.sdp)) this.seen.rem.add(t);
     iceTrickle(pc, c => this.bus.pub(this.topic('host'), { t: 'cand', g: this.gid, c }), this.seen);
-    pc.ontrack = e => this.showVideo(e.streams[0] || new MediaStream([e.track]));
+    pc.ontrack = e => {
+      lowDelay(e.receiver);
+      this.showVideo(new MediaStream(pc.getReceivers().map(r => r.track).filter(t => t && t.readyState === 'live')));
+    };
     pc.ondatachannel = e => {
       const dc = this.dc = e.channel;
       dc.onmessage = m => { let x; try { x = JSON.parse(m.data); } catch (er) { return; } if (x.t === 'hi') this.slot = x.slot; };
@@ -316,6 +326,7 @@ const Net = {
     if (this.failed) return;
     this.failed = true; this.status = msg;
     if (this.video) this.video.style.display = 'none';
+    if (this.info) this.info.style.display = 'none';
     if (this.pc) try { this.pc.close(); } catch (e) { /* уже закрыт */ }
     if (this.bus) this.bus.close();
   },
@@ -375,12 +386,38 @@ const Net = {
       this.playT = (this.playT || 0) - dt;
       if (v.paused && this.playT <= 0) { this.playT = 1; v.muted = true; v.play().catch(() => {}); }
     }
+    this.statT -= dt;
+    if (this.statT <= 0) { this.statT = 1; this.showStats(); }
     if (!this.dc || this.dc.readyState !== 'open') return;
     const C = ALL_CTRL, keys = [C.up, C.down, C.left, C.right, C.fire, C.special, NET_START];
     let b = 0;
     keys.forEach((k, i) => { if (Input.any(k)) b |= 1 << i; });
     this.sendT -= dt;
     if (b !== this.bits || this.sendT <= 0) { this.bits = b; this.sendT = 0.25; try { this.dc.send(JSON.stringify({ t: 'in', b })); } catch (e) { /* канал закрылся */ } }
+  },
+  // в углу: как соединены (напрямую или через TURN), пинг и что приходит по видео
+  async showStats() {
+    let r; try { r = await this.pc.getStats(); } catch (e) { return; }
+    let pair = null, vid = null;
+    r.forEach(x => {
+      if (x.type === 'transport' && x.selectedCandidatePairId) pair = r.get(x.selectedCandidatePairId);
+      if (x.type === 'inbound-rtp' && x.kind === 'video') vid = x;
+    });
+    if (!pair) r.forEach(x => { if (x.type === 'candidate-pair' && x.nominated && x.state === 'succeeded') pair = x; });
+    const loc = pair && r.get(pair.localCandidateId), rem = pair && r.get(pair.remoteCandidateId);
+    const relay = (loc && loc.candidateType === 'relay') || (rem && rem.candidateType === 'relay');
+    let s = pair ? (relay ? 'ЧЕРЕЗ TURN' : 'НАПРЯМУЮ') : '';
+    if (pair && pair.currentRoundTripTime != null) s += ' · ПИНГ ' + Math.round(pair.currentRoundTripTime * 1000) + ' МС';
+    if (vid && vid.frameWidth) s += ' · ' + vid.frameWidth + '×' + vid.frameHeight + ' · ' + Math.round(vid.framesPerSecond || 0) + ' К/С';
+    if (vid && vid.jitterBufferEmittedCount) s += ' · БУФЕР ' + Math.round(vid.jitterBufferDelay / vid.jitterBufferEmittedCount * 1000) + ' МС';
+    let el = this.info;
+    if (!el) {
+      el = this.info = document.createElement('div');
+      Object.assign(el.style, { position: 'fixed', left: '4px', top: '4px', zIndex: 6, pointerEvents: 'none',
+        font: '11px monospace', color: '#fcfcfc', background: 'rgba(0,0,0,.55)', padding: '1px 4px' });
+      document.body.appendChild(el);
+    }
+    el.textContent = s; el.style.display = s ? 'block' : 'none';
   },
   drawGuest() {
     text('ОНЛАЙН', W / 2, 60, '#fcd820', 3, 'center', '#7c4000');
