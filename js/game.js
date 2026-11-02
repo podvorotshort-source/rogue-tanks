@@ -365,6 +365,7 @@ function gameOver() {
 // ============================================================
 function update(dt) {
   G.time += dt;
+  if (Net.role === 'host') Net.hostStep();
   if (Input.hit(['KeyM'])) { Sound.musicOn = !Sound.musicOn; }
   switch (G.state) {
     case 'title': updateTitle(dt); break;
@@ -1092,7 +1093,7 @@ function loop(now) {
   while (acc >= STEP && n < 5) { update(STEP); Input.endStep(); acc -= STEP; n++; }
   if (n === 5) acc = 0;
   render();
-  Net.afterRender();
+  Net.afterRender(n);
   Music.update();
 }
 requestAnimationFrame(loop);

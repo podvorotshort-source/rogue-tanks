@@ -63,7 +63,7 @@ const remZip = async (u, inflate) => new Uint8Array(await new Response(new Blob(
 //  ХОСТ: запись
 // ============================================================
 const Rec = {
-  on: false, busy: 0, gen: 1, next: 1, nextP: 1, lastSend: 0, chain: Promise.resolve(),
+  on: false, busy: 0, gen: 1, next: 1, nextP: 1, chain: Promise.resolve(),
   core: new RemW(),   // снимки картинок и команды на скрытых холстах — доходят все и по порядку
   main: new RemW(),   // команды на экране за кадр — при плохой связи кадр можно пропустить
   ids: new WeakMap(), ctxs: new WeakMap(), pats: new WeakMap(), freed: [],
@@ -192,14 +192,13 @@ const Rec = {
   },
   unmark() { const w = this.tgt(this.main, 0); w.b(OP_MARK); w.b(0); },
   // после отрисовки кадра: записанное { core, main }; null — кадр не шлём
-  frame(now) {
+  frame(skip) {
     if (this.freed.length) {
       const c = this.core; c.b(OP_FREE); c.v(this.freed.length);
       for (const id of this.freed) c.v(id);
       this.freed.length = 0;
     }
-    if (now - this.lastSend < 14) { this.main.clear(); this.state(this.main, ctx, 0); return null; } // больше 60 кадров в секунду не нужно
-    this.lastSend = now;
+    if (skip) { this.main.clear(); this.state(this.main, ctx, 0); return null; } // игра не сдвинулась — тот же кадр второй раз не шлём
     const core = this.core.take(), main = this.main.take();
     this.state(this.main, ctx, 0);
     return { core, main };
@@ -270,7 +269,8 @@ function freeRun(p, d) {
 // сообщение: [флаги][данные], флаги: 1 — продолжение следует (только 'scr'), 2 — данные сжаты
 const Play = {
   cv: new Map(), pats: new Map(), frame: null, parts: [], chain: Promise.resolve(), mk: null,
-  seq: 0, fno: 0, pend: null, // последний полученный seq снимков, номер показанного кадра, кадр, ждущий снимков
+  seq: 0, fno: 0, // последний полученный seq снимков, номер показанного кадра
+  q: [], offs: [], minO: 0, delay: 16, // кадры в очереди на показ, как опаздывали кадры за 3 с, запас на неровность сети (мс)
   frames: 0, bytes: 0,   // для строки связи: кадров и байт с прошлого раза
   // 'scr': [seq][длина core][core][кадр — если канала 'frm' нет]
   listen(dc) {
@@ -288,32 +288,52 @@ const Play = {
       this.chain = this.chain.then(() => zip ? remZip(all, true) : all).then(m => this.apply(m), () => {});
     };
   },
-  // 'frm': [нужный seq][номер кадра][кадр] — приходят как попало, старые отбрасываем
+  // 'frm': [нужный seq][номер кадра][время хоста, мс][кадр] — приходят как попало, старые отбрасываем
   listenFrames(dc) {
     dc.binaryType = 'arraybuffer';
     dc.onmessage = e => {
-      const u = new Uint8Array(e.data), body = u.subarray(1);
+      const u = new Uint8Array(e.data), body = u.subarray(1), at = performance.now();
       this.bytes += u.length;
       (u[0] & 2 ? remZip(body, true) : Promise.resolve(body)).then(m => {
-        const r = new RemR(m), need = r.v(), fno = r.v(), frame = m.subarray(r.n);
+        const r = new RemR(m), need = r.v(), fno = r.v(), ht = r.v(), frame = m.subarray(r.n);
         if (fno <= this.fno) return;
-        if (need <= this.seq) this.show(frame, fno);
-        else if (!this.pend || fno > this.pend.fno) this.pend = { need, fno, frame };
+        this.clock(ht, at);
+        let k = this.q.length;
+        while (k && this.q[k - 1].fno > fno) k--;
+        this.q.splice(k, 0, { need, fno, ht, frame });
       }, () => {});
     };
   },
-  show(frame, fno) {
-    this.frame = frame; this.fno = fno; this.frames++;
-    if (this.pend && this.pend.fno <= fno) this.pend = null;
+  // кадры по сети идут неровно (особенно по Wi-Fi), а показывать их надо ровно, как они шли у хоста.
+  // o — когда кадр пришёл по часам гостя минус когда нарисован по часам хоста; самый быстрый за 3 с —
+  // путь без задержек, остальные опаздывают сверх него; запас delay — чтобы почти все кадры успевали
+  clock(ht, at) {
+    const O = this.offs, o = at - ht;
+    O.push({ at, o });
+    while (O[0].at < at - 3000) O.shift();
+    let min = Infinity; for (const x of O) if (x.o < min) min = x.o;
+    this.minO = min;
+    const d = O.map(x => x.o - min).sort((a, b) => a - b), need = clamp(d[Math.floor(d.length * 0.95)] + 8, 8, 133);
+    this.delay = need > this.delay ? need : Math.max(need, this.delay - 0.5);
   },
+  // перед отрисовкой: последний кадр, чьё время уже пришло (и снимки для него есть)
+  pick() {
+    const t = performance.now() - this.minO - this.delay, Q = this.q;
+    let k = -1;
+    for (let j = 0; j < Q.length && (Q[j].ht <= t || !this.frame); j++) if (Q[j].need <= this.seq) k = j;
+    if (k < 0) return;
+    this.show(Q[k].frame, Q[k].fno);
+    Q.splice(0, k + 1);
+  },
+  show(frame, fno) { this.frame = frame; this.fno = fno; this.frames++; },
   apply(m) {
     const r = new RemR(m), seq = r.v(), coreLen = r.v(), start = r.n;
     this.run(r, start + coreLen, null);
     this.seq = seq;
     if (r.n < m.length) this.show(m.subarray(r.n), this.fno + 1);
-    else if (this.pend && this.pend.need <= seq) this.show(this.pend.frame, this.pend.fno);
   },
   draw() {
+    this.pick();
     if (!this.frame) return false;
     ctx.save();
     this.mk = null;
@@ -409,7 +429,7 @@ const Play = {
     if (t === 2) return r.f();
     return undefined;
   },
-  reset() { this.cv.clear(); this.pats.clear(); this.frame = null; this.parts = []; this.pend = null; },
+  reset() { this.cv.clear(); this.pats.clear(); this.frame = null; this.parts = []; this.q = []; this.offs = []; },
 };
 
 // ============================================================
@@ -448,7 +468,9 @@ const Pred = {
 const Remote = {
   ok: typeof CompressionStream === 'function' && typeof DecompressionStream === 'function',
   add(g) { g.scrReady = false; g.needReset = true; if (!Rec.on) Rec.start(); },
-  frame(guests) {
+  // steps — сколько шагов игры прошло с прошлой отрисовки: кадр шлём только после шага (тот же кадр
+  // второй раз не нужен); с кадром — время хоста, по нему гость показывает кадры так же ровно, как хост
+  frame(guests, steps) {
     if (!Rec.on) return;
     const list = guests.filter(g => g && g.scr && g.scr.readyState === 'open');
     if (!list.length) { Rec.stop(); return; }
@@ -457,7 +479,7 @@ const Remote = {
       for (const g of list) { g.needReset = false; g.scrReady = true; }
       return;
     }
-    const m = Rec.frame(performance.now());
+    const m = Rec.frame(!steps);
     if (!m) return;
     const to = list.filter(g => g.scrReady);
     if (m.core.length) this.seq++;
@@ -471,7 +493,7 @@ const Remote = {
     if (m.core.length && rest.length) this.sendRel(remJoin(head, m.core), rest);
     const fr = to.filter(g => lossy(g) && g.frm.bufferedAmount < 64 * 1024);
     if (fr.length) {
-      w.v(seq); w.v(fno);
+      w.v(seq); w.v(fno); w.v(Math.round(performance.now()));
       remPack(remJoin(w.take(), m.main)).then(({ z, zip }) => {
         if (z.length > REM_FRM_MAX) return;
         const out = new Uint8Array(z.length + 1); out[0] = zip ? 2 : 0; out.set(z, 1);

@@ -240,14 +240,14 @@ const Net = {
   },
   async offer(slot, gid) {
     const pc = new RTCPeerConnection(NET_ICE);
-    const g = this.guests[slot] = { gid, pc, dc: null, slot, inSeq: 0, live: false, answered: false, queue: [], seen: { loc: new Set(), rem: new Set() } };
+    const g = this.guests[slot] = { gid, pc, dc: null, slot, inSeq: 0, inQ: [], qTop: 0, keyT: 0, live: false, answered: false, queue: [], seen: { loc: new Set(), rem: new Set() } };
     iceTrickle(pc, c => this.bus.pub(this.topic('g/' + gid), { t: 'cand', c }), g.seen);
     const au = this.getAudio();
     if (au) for (const t of au.getTracks()) pc.addTrack(t, au);
     const dc = g.dc = pc.createDataChannel('in');
-    const key = pc.createDataChannel('key', NET_LOSSY); // кнопки гостя каждый шаг: [биты, номер u32]
+    const key = pc.createDataChannel('key', NET_LOSSY); // кнопки гостя каждый шаг: [биты, номер u32, биты трёх прошлых шагов]
     key.binaryType = 'arraybuffer';
-    key.onmessage = e => { if (e.data.byteLength >= 5) { const v = new DataView(e.data); this.applyBits(slot, v.getUint8(0), v.getUint32(1, true)); } };
+    key.onmessage = e => { if (e.data.byteLength >= 5) this.queueBits(g, new Uint8Array(e.data)); };
     const scr = pc.createDataChannel('scr'); // экран: снимки картинок и команды на скрытых холстах
     scr.binaryType = 'arraybuffer';
     scr.onopen = () => { g.scr = scr; Remote.add(g); };
@@ -255,7 +255,7 @@ const Net = {
     frm.binaryType = 'arraybuffer';
     frm.onopen = () => { g.frm = frm; };
     dc.onopen = () => { g.live = true; dc.send(JSON.stringify({ t: 'hi', slot })); Sound.play('pickup'); };
-    dc.onmessage = e => { let d; try { d = JSON.parse(e.data); } catch (er) { return; } if (d.t === 'in') this.applyBits(slot, d.b | 0, d.s); else if (d.t === 'tal') g.lv = cleanLv(d.lv); };
+    dc.onmessage = e => { let d; try { d = JSON.parse(e.data); } catch (er) { return; } if (d.t === 'in') { if (performance.now() - g.keyT > 500) this.applyBits(slot, d.b | 0, d.s); } else if (d.t === 'tal') g.lv = cleanLv(d.lv); };
     dc.onclose = () => this.dropGuest(g);
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed' || pc.connectionState === 'closed') this.dropGuest(g); };
     setTimeout(() => { if (!g.live) this.dropGuest(g); }, 30000); // гость так и не подключился — освобождаем место
@@ -273,6 +273,26 @@ const Net = {
       const code = 'Net' + slot + k;
       if (b & (1 << i)) Input.press(code); else if (Input.down[code]) Input.release(code);
     });
+  },
+  // шаги гостя — в очередь; прошлые шаги в пакете закрывают потерянные пакеты
+  queueBits(g, u) {
+    g.keyT = performance.now();
+    const s = new DataView(u.buffer, u.byteOffset).getUint32(1, true);
+    for (let k = Math.min(3, u.length - 5); k >= 0; k--) {
+      const sk = s - k;
+      if (sk > g.qTop) { g.inQ.push({ s: sk, b: k ? u[4 + k] : u[0] }); g.qTop = sk; }
+    }
+  },
+  // каждый шаг хоста — ровно один шаг гостя: танк у хоста проезжает столько же, сколько насчитал гость (Pred),
+  // как бы неровно ни шли пакеты. Очередь выросла (пакеты пришли пачкой) — лишние шаги сливаем, кнопки огня не теряем
+  hostStep() {
+    for (const g of this.guests) {
+      if (!g || !g.inQ.length) continue;
+      const Q = g.inQ;
+      if (Q.length > 4) while (Q.length > 2) { const x = Q.shift(); Q[0].b |= x.b & 0x70; }
+      const x = Q.shift();
+      this.applyBits(g.slot, x.b, x.s);
+    }
   },
   guestLv(slot) { const g = this.guests[slot]; return (g && g.lv) || {}; },
   // медали за сектор — гостям, чьи танки в забеге
@@ -304,8 +324,8 @@ const Net = {
     } catch (e) { /* без звука у гостей */ }
     return this.audio;
   },
-  afterRender() {
-    if (this.role === 'host') Remote.frame(this.guests);
+  afterRender(steps) {
+    if (this.role === 'host') Remote.frame(this.guests, steps);
   },
   // QR со ссылкой на эту же страницу с ?join=КОД (только если страница открыта не с этого компьютера)
   makeQr() {
@@ -437,12 +457,13 @@ const Net = {
     const C = ALL_CTRL, dir = ctrlDir(C), keys = [C.fire, C.special, NET_START];
     let b = dir >= 0 ? 1 << [0, 3, 1, 2][dir] : 0; // биты NET_KEYS: Up, Down, Left, Right
     keys.forEach((k, i) => { if (Input.any(k)) b |= 1 << (i + 4); });
-    const s = ++this.kseq;
+    const s = ++this.kseq, kb = this.kb || (this.kb = [0, 0, 0]);
     Pred.step(s, dir, dt);
     if (this.key && this.key.readyState === 'open') {
-      const u = new Uint8Array(5), v = new DataView(u.buffer); v.setUint8(0, b); v.setUint32(1, s, true);
+      const u = new Uint8Array(8), v = new DataView(u.buffer); v.setUint8(0, b); v.setUint32(1, s, true); u.set(kb, 5);
       try { this.key.send(u); } catch (e) { /* канал закрылся */ }
     }
+    kb.pop(); kb.unshift(b);
     // запасной путь — надёжный канал, при смене кнопок и раз в 0.25 с
     this.sendT -= dt;
     if (b !== this.bits || this.sendT <= 0) { this.bits = b; this.sendT = 0.25; try { this.dc.send(JSON.stringify({ t: 'in', b, s })); } catch (e) { /* канал закрылся */ } }
@@ -459,7 +480,7 @@ const Net = {
     if (pair && pair.currentRoundTripTime != null) s += ' · ПИНГ ' + Math.round(pair.currentRoundTripTime * 1000) + ' МС';
     const now = performance.now(), sec = Math.max(0.2, (now - (this.statAt || now - 1000)) / 1000);
     this.statAt = now;
-    if (pair) s += ' · ' + Math.round(Play.frames / sec) + ' К/С · ' + Math.round(Play.bytes / sec / 1024) + ' КБ/С';
+    if (pair) s += ' · ' + Math.round(Play.frames / sec) + ' К/С · БУФЕР ' + Math.round(Play.delay) + ' МС · ' + Math.round(Play.bytes / sec / 1024) + ' КБ/С';
     Play.frames = 0; Play.bytes = 0;
     let el = this.info;
     if (!el) {
