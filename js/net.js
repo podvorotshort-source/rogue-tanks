@@ -284,12 +284,14 @@ const Net = {
     }
   },
   // каждый шаг хоста — ровно один шаг гостя: танк у хоста проезжает столько же, сколько насчитал гость (Pred),
-  // как бы неровно ни шли пакеты. Очередь выросла (пакеты пришли пачкой) — лишние шаги сливаем, кнопки огня не теряем
+  // как бы неровно ни шли пакеты. Шаг без пакета хост повторяет прошлые кнопки и запоминает долг; очередь выросла
+  // (пакеты пришли пачкой) или есть долг — лишние шаги сливаем, кнопки огня не теряем. Очередь держим в 1–2 шага
   hostStep() {
     for (const g of this.guests) {
-      if (!g || !g.inQ.length) continue;
+      if (!g) continue;
       const Q = g.inQ;
-      if (Q.length > 4) while (Q.length > 2) { const x = Q.shift(); Q[0].b |= x.b & 0x70; }
+      if (!Q.length) { if (g.qTop) g.debt = Math.min(4, (g.debt || 0) + 1); continue; }
+      while (Q.length > 2 || (Q.length > 1 && g.debt > 0)) { const x = Q.shift(); Q[0].b |= x.b & 0x70; if (g.debt > 0) g.debt--; }
       const x = Q.shift();
       this.applyBits(g.slot, x.b, x.s);
     }
@@ -458,7 +460,7 @@ const Net = {
     let b = dir >= 0 ? 1 << [0, 3, 1, 2][dir] : 0; // биты NET_KEYS: Up, Down, Left, Right
     keys.forEach((k, i) => { if (Input.any(k)) b |= 1 << (i + 4); });
     const s = ++this.kseq, kb = this.kb || (this.kb = [0, 0, 0]);
-    Pred.step(s, dir, dt);
+    Pred.step(s, dir, dt, !!(b & 16));
     if (this.key && this.key.readyState === 'open') {
       const u = new Uint8Array(8), v = new DataView(u.buffer); v.setUint8(0, b); v.setUint32(1, s, true); u.set(kb, 5);
       try { this.key.send(u); } catch (e) { /* канал закрылся */ }

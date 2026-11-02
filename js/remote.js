@@ -8,7 +8,8 @@
 //  Текст, круги и эллипсы уходят одной командой, а не сотней fillRect.
 //  Снимки идут надёжным каналом 'scr' (номер seq), кадры — каналом без повторов
 //  'frm'; кадр помнит, какой seq ему нужен, и ждёт его, если снимки отстали.
-//  Свой танк гость рисует сразу там, куда уже нажал (Pred), не дожидаясь хоста.
+//  Свой танк гость рисует сразу там, куда уже нажал (Pred), не дожидаясь хоста;
+//  свои пули — там, где они уже долетели, а только что выпущенную — сам, сразу.
 // ============================================================
 
 const REM_M = ['drawImage', 'fillRect', 'clearRect', 'strokeRect', 'beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'arcTo',
@@ -17,7 +18,7 @@ const REM_M = ['drawImage', 'fillRect', 'clearRect', 'strokeRect', 'beginPath', 
 const REM_P = ['fillStyle', 'strokeStyle', 'globalAlpha', 'globalCompositeOperation', 'lineWidth', 'imageSmoothingEnabled',
   'font', 'textAlign', 'textBaseline', 'lineCap', 'lineJoin'];
 const REM_MAC = ['disc', 'ellipse', 'text'];                 // функции рисования, которые гость повторяет сам целиком
-const OP_PROP = 64, OP_TGT = 120, OP_SNAP = 121, OP_STATE = 122, OP_PAT = 123, OP_MARK = 124, OP_FREE = 125, OP_RESET = 126, OP_MAC = 127;
+const OP_PROP = 64, OP_SHOT = 119, OP_TGT = 120, OP_SNAP = 121, OP_STATE = 122, OP_PAT = 123, OP_MARK = 124, OP_FREE = 125, OP_RESET = 126, OP_MAC = 127;
 const REM_CHUNK = 16000;                                     // больше за раз надёжный канал может не принять
 const REM_RAW = 1024;                                        // меньше — шлём без сжатия: сжатие тоже стоит времени
 const REM_FRM_MAX = 200000;                                  // кадр больше — не шлём каналом без повторов
@@ -188,9 +189,23 @@ const Rec = {
     w.b(G.state === 'play' && !G.paused && p.dashT <= 0 ? 1 : 0);
     for (const id of ids) w.v(id);
     for (let d = 0; d < 4; d++) w.b(freeRun(p, d));
+    // для выстрела у гостя: перезарядка, снаряды в полёте, скорость и сколько пролетит пуля в каждую сторону
+    const st = p.stats;
+    w.f(Math.max(0, p.cool)); w.f(st.reload); w.b(Math.min(255, p.out)); w.b(Math.min(255, st.maxB)); w.f(st.bspeed);
+    for (let d = 0; d < 4; d++) w.b(bulletRun(p.cx + DX[d] * 7, p.cy + DY[d] * 7, DX[d], DY[d], 4));
     return true;
   },
   unmark() { const w = this.tgt(this.main, 0); w.b(OP_MARK); w.b(0); },
+  // пуля онлайн-гостя: гость сдвинет её вперёд на столько, на сколько отстаёт кадр, — не дальше стены (run)
+  shot(g, b) {
+    if (this.cinfo(g).id !== 0) return false;
+    const w = this.tgt(this.main, 0), gu = Net.guests[b.owner.ctrl.net], sp = Math.hypot(b.vx, b.vy) || 1;
+    const lin = (b.kind === 'shell' || b.kind === 'small') && !b.homing;
+    w.b(OP_SHOT); w.b(1); w.v(b.owner.ctrl.net); w.f(b.vx); w.f(b.vy);
+    w.b(lin ? bulletRun(b.x, b.y, b.vx / sp, b.vy / sp, b.size) : 0); w.v(gu ? gu.inSeq : 0);
+    return true;
+  },
+  unshot() { const w = this.tgt(this.main, 0); w.b(OP_SHOT); w.b(0); },
   // после отрисовки кадра: записанное { core, main }; null — кадр не шлём
   frame(skip) {
     if (this.freed.length) {
@@ -257,6 +272,23 @@ const Rec = {
 // ============================================================
 //  ГОСТЬ: повтор
 // ============================================================
+// сколько пикселей (до BUL_RUN) пролетит пуля размера size из (x, y) по (ux, uy), пока не упрётся в кирпич, сталь или край поля
+const BUL_RUN = 120;
+function bulletRun(x, y, ux, uy, size) {
+  const h = size / 2, L = G.level;
+  if (!L) return 0;
+  let n = 0;
+  while (n < BUL_RUN) {
+    const nx = x + ux * (n + 2), ny = y + uy * (n + 2);
+    if (nx < 0 || ny < 0 || nx >= FW || ny >= FH) break;
+    const x0 = Math.floor((nx - h) / CELL), y0 = Math.floor((ny - h) / CELL), x1 = Math.floor((nx + h - 0.01) / CELL), y1 = Math.floor((ny + h - 0.01) / CELL);
+    let hit = false;
+    for (let cy = y0; cy <= y1 && !hit; cy++) for (let cx = x0; cx <= x1; cx++) { const t = L.get(cx, cy); if (t === T_BRICK || t === T_STEEL) { hit = true; break; } }
+    if (hit) break;
+    n += 2;
+  }
+  return n;
+}
 // сколько пикселей (до PRED_MAX) танк проедет в сторону d — с выравниванием по сетке при повороте, как Tank.turn
 function freeRun(p, d) {
   let x = p.x, y = p.y, n = 0;
@@ -268,9 +300,9 @@ function freeRun(p, d) {
 }
 // сообщение: [флаги][данные], флаги: 1 — продолжение следует (только 'scr'), 2 — данные сжаты
 const Play = {
-  cv: new Map(), pats: new Map(), frame: null, parts: [], chain: Promise.resolve(), mk: null,
+  cv: new Map(), pats: new Map(), frame: null, parts: [], chain: Promise.resolve(), mk: null, sh: null,
   seq: 0, fno: 0, // последний полученный seq снимков, номер показанного кадра
-  q: [], offs: [], minO: 0, delay: 16, // кадры в очереди на показ, как опаздывали кадры за 3 с, запас на неровность сети (мс)
+  q: [], offs: [], minO: 0, delay: 16, // кадры в очереди на показ, как опаздывали кадры за 2 с, запас на неровность сети (мс)
   frames: 0, bytes: 0,   // для строки связи: кадров и байт с прошлого раза
   // 'scr': [seq][длина core][core][кадр — если канала 'frm' нет]
   listen(dc) {
@@ -310,11 +342,11 @@ const Play = {
   clock(ht, at) {
     const O = this.offs, o = at - ht;
     O.push({ at, o });
-    while (O[0].at < at - 3000) O.shift();
+    while (O[0].at < at - 2000) O.shift();
     let min = Infinity; for (const x of O) if (x.o < min) min = x.o;
     this.minO = min;
-    const d = O.map(x => x.o - min).sort((a, b) => a - b), need = clamp(d[Math.floor(d.length * 0.95)] + 8, 8, 133);
-    this.delay = need > this.delay ? need : Math.max(need, this.delay - 0.5);
+    const d = O.map(x => x.o - min).sort((a, b) => a - b), need = clamp(d[Math.floor(d.length * 0.9)] + 4, 4, 100);
+    this.delay = need > this.delay ? need : Math.max(need, this.delay - 1);
   },
   // перед отрисовкой: последний кадр, чьё время уже пришло (и снимки для него есть)
   pick() {
@@ -336,9 +368,10 @@ const Play = {
     this.pick();
     if (!this.frame) return false;
     ctx.save();
-    this.mk = null;
+    this.mk = null; this.sh = null;
     this.run(new RemR(this.frame), this.frame.length, ctx);
     ctx.restore();
+    Pred.drawGhosts();
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     return true;
   },
@@ -386,8 +419,17 @@ const Play = {
         if (!r.b()) { if (g && this.mk) g.translate(-this.mk[0], -this.mk[1]); this.mk = null; continue; }
         const slot = r.v(), x = r.i() / 4, y = r.i() / 4, dir = r.b(), speed = r.f(), ack = r.v(), live = r.b();
         const spr = [r.v(), r.v(), r.v(), r.v()], room = [r.b(), r.b(), r.b(), r.b()];
-        this.mk = g && slot === Net.slot && live ? Pred.shift(x, y, dir, speed, ack, room) : null;
+        const fi = { cool: r.f(), reload: r.f(), out: r.b(), maxB: r.b(), bs: r.f(), run: [r.b(), r.b(), r.b(), r.b()] };
+        const own = g && slot === Net.slot;
+        if (own) Pred.ack = Math.max(Pred.ack, ack);
+        this.mk = own && live ? Pred.shift(x, y, dir, speed, ack, room) : null;
+        if (own) Pred.fi = this.mk ? Object.assign(fi, { ack, hx: x, hy: y, px: x + this.mk[0], py: y + this.mk[1], pd: this.mk[2], T: g.getTransform(), at: performance.now() }) : null;
         if (this.mk) { this.mk.push(spr, dir); g.translate(this.mk[0], this.mk[1]); }
+      } else if (op === OP_SHOT) {
+        if (!r.b()) { if (g && this.sh) g.translate(-this.sh[0], -this.sh[1]); this.sh = null; continue; }
+        const slot = r.v(), vx = r.f(), vy = r.f(), run = r.b(), ack = r.v();
+        this.sh = g && slot === Net.slot ? Pred.lead(vx, vy, run, ack) : null;
+        if (this.sh) g.translate(this.sh[0], this.sh[1]);
       } else if (op === OP_SNAP) this.snap(r);
       else if (op === OP_STATE) this.state(r);
       else if (op === OP_PAT) {
@@ -429,7 +471,7 @@ const Play = {
     if (t === 2) return r.f();
     return undefined;
   },
-  reset() { this.cv.clear(); this.pats.clear(); this.frame = null; this.parts = []; this.q = []; this.offs = []; },
+  reset() { this.cv.clear(); this.pats.clear(); this.frame = null; this.parts = []; this.q = []; this.offs = []; Pred.ghosts = []; Pred.fi = null; },
 };
 
 // ============================================================
@@ -441,9 +483,46 @@ const Play = {
 //  хост присылает, сколько места у танка в каждую сторону (room).
 // ============================================================
 const PRED_MAX = 16; // дальше хоста не уезжаем ни при какой задержке
+//  Выстрел: пока хост не увидел нажатие, гость сам рисует вылетевшую пулю
+//  (призрак) — если по последнему кадру пушка уже перезарядилась. Когда
+//  в кадре появится настоящая пуля (ack дошёл до шага выстрела), призрак
+//  убираем, а настоящую своя пулю гость рисует сдвинутой вперёд (lead) —
+//  она оказывается там же, где был призрак.
 const Pred = {
-  hist: [],
-  step(seq, dir, dt) { this.hist.push({ seq, dir, dt }); if (this.hist.length > 240) this.hist.shift(); },
+  hist: [], ack: 0, fi: null, ghosts: [], lastG: -1e9,
+  step(seq, dir, dt, fire) {
+    this.hist.push({ seq, dir, dt }); if (this.hist.length > 240) this.hist.shift();
+    if (fire) this.ghost(seq);
+  },
+  ghost(seq) {
+    const f = this.fi;
+    if (!f || performance.now() - f.at > 300) return;
+    const k = seq - f.ack, after = this.ghosts.filter(q => q.s > f.ack).length;
+    if (f.cool - k / 60 > 0.001 || f.out + after >= f.maxB || seq - this.lastG < f.reload * 60 - 0.5) return;
+    this.lastG = seq;
+    const d = f.pd, along = (f.px - f.hx) * DX[d] + (f.py - f.hy) * DY[d];
+    this.ghosts.push({ s: seq, x: f.px + 8 + DX[d] * 7, y: f.py + 8 + DY[d] * 7, d, sp: f.bs, t: performance.now(), run: Math.max(0, f.run[d] - along), T: f.T });
+  },
+  // сдвиг своей пули: сколько она пролетит за шаги, которых хост ещё не видел
+  lead(vx, vy, run, ack) {
+    const k = Net.kseq - ack, sp = Math.hypot(vx, vy) || 1;
+    if (k <= 0 || !run) return null;
+    const d = Math.min(run, sp * k / 60);
+    return [Math.round(vx / sp * d), Math.round(vy / sp * d)];
+  },
+  drawGhosts() {
+    const now = performance.now();
+    this.ghosts = this.ghosts.filter(q => q.s > this.ack && now - q.t < 1000);
+    for (const q of this.ghosts) {
+      const dist = q.sp * (now - q.t) / 1000;
+      if (dist >= q.run) continue; // долетела до стены — ждём, что скажет хост
+      const x = Math.round(q.x + DX[q.d] * dist), y = Math.round(q.y + DY[q.d] * dist);
+      ctx.setTransform(q.T);
+      if (q.d & 1) { rect(ctx, x - 2, y - 1, 4, 3, '#fcfcfc'); rect(ctx, DX[q.d] < 0 ? x - 3 : x + 2, y, 1, 1, '#fcfcfc'); }
+      else { rect(ctx, x - 1, y - 2, 3, 4, '#fcfcfc'); rect(ctx, x, DY[q.d] < 0 ? y - 3 : y + 2, 1, 1, '#fcfcfc'); }
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  },
   // [dx, dy, сторона]: сдвиг рисования в целых пикселях и куда танк смотрит
   shift(x, y, dir, speed, ack, room) {
     const H = this.hist;

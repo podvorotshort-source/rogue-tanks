@@ -324,6 +324,11 @@ class Bullet {
     return false;
   }
   draw(g) {
+    const mk = this.team === 'player' && this.owner instanceof Player && this.owner.ctrl.net != null && Rec.on && Rec.shot(g, this); // онлайн-гость: своя пуля у него летит без задержки
+    this.drawShape(g);
+    if (mk) Rec.unshot();
+  }
+  drawShape(g) {
     const x = Math.round(this.x), y = Math.round(this.y);
     switch (this.kind) {
       case 'shell': {
