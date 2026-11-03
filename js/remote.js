@@ -193,6 +193,13 @@ const Rec = {
     const st = p.stats;
     w.f(Math.max(0, p.cool)); w.f(st.reload); w.b(Math.min(255, p.out)); w.b(Math.min(255, st.maxB)); w.f(st.bspeed);
     for (let d = 0; d < 4; d++) w.b(bulletRun(p.cx + DX[d] * 7, p.cy + DY[d] * 7, DX[d], DY[d], 4));
+    // дробовик: сколько дробин и сколько пролетит каждая боковая в каждую сторону (не дальше, чем живёт)
+    const angs = fanAngs(st);
+    w.b(angs.length);
+    for (let d = 0; d < 4; d++) {
+      const base = Math.atan2(DY[d], DX[d]);
+      for (let k = 1; k < angs.length; k++) w.b(Math.min(SIDE_RUN, bulletRun(p.cx + DX[d] * 7, p.cy + DY[d] * 7, Math.cos(base + angs[k]), Math.sin(base + angs[k]), 4)));
+    }
     return true;
   },
   unmark() { const w = this.tgt(this.main, 0); w.b(OP_MARK); w.b(0); },
@@ -202,7 +209,7 @@ const Rec = {
     const w = this.tgt(this.main, 0), gu = Net.guests[b.owner.ctrl.net], sp = Math.hypot(b.vx, b.vy) || 1;
     const lin = (b.kind === 'shell' || b.kind === 'small') && !b.homing;
     w.b(OP_SHOT); w.b(1); w.v(b.owner.ctrl.net); w.f(b.vx); w.f(b.vy);
-    w.b(lin ? bulletRun(b.x, b.y, b.vx / sp, b.vy / sp, b.size) : 0); w.v(gu ? gu.inSeq : 0);
+    w.b(lin ? Math.min(Math.floor(b.life * sp), bulletRun(b.x, b.y, b.vx / sp, b.vy / sp, b.size)) : 0); w.v(gu ? gu.inSeq : 0); // боковая дробина гаснет — дальше не сдвигаем
     return true;
   },
   unshot() { const w = this.tgt(this.main, 0); w.b(OP_SHOT); w.b(0); },
@@ -274,6 +281,13 @@ const Rec = {
 // ============================================================
 // сколько пикселей (до BUL_RUN) пролетит пуля размера size из (x, y) по (ux, uy), пока не упрётся в кирпич, сталь или край поля
 const BUL_RUN = 120;
+// углы веера выстрела, как Player.tryFire: 0 — основной снаряд, дальше боковые дробины парами
+function fanAngs(s) {
+  const step = s.pellets >= 7 ? 0.12 : s.pellets >= 5 ? 0.15 : 0.24, angs = [0];
+  if (s.spread) for (let k = 1; k <= (s.pellets - 1) >> 1; k++) angs.push(-step * k, step * k);
+  return angs;
+}
+const SIDE_RUN = 90; // боковые дробины гаснут на ~90 px (life в tryFire)
 function bulletRun(x, y, ux, uy, size) {
   const h = size / 2, L = G.level;
   if (!L) return 0;
@@ -420,6 +434,8 @@ const Play = {
         const slot = r.v(), x = r.i() / 4, y = r.i() / 4, dir = r.b(), speed = r.f(), ack = r.v(), live = r.b();
         const spr = [r.v(), r.v(), r.v(), r.v()], room = [r.b(), r.b(), r.b(), r.b()];
         const fi = { cool: r.f(), reload: r.f(), out: r.b(), maxB: r.b(), bs: r.f(), run: [r.b(), r.b(), r.b(), r.b()] };
+        const np = r.b(); fi.np = np; fi.side = [];
+        for (let d = 0; d < 4; d++) { const a = []; for (let k = 1; k < np; k++) a.push(r.b()); fi.side.push(a); }
         const own = g && slot === Net.slot;
         if (own) Pred.ack = Math.max(Pred.ack, ack);
         this.mk = own && live ? Pred.shift(x, y, dir, speed, ack, room) : null;
@@ -497,11 +513,13 @@ const Pred = {
   ghost(seq) {
     const f = this.fi;
     if (!f || performance.now() - f.at > 300) return;
-    const k = seq - f.ack, after = this.ghosts.filter(q => q.s > f.ack).length;
+    const k = seq - f.ack, after = this.ghosts.filter(q => q.s > f.ack && q.main).length;
     if (f.cool - k / 60 > 0.001 || f.out + after >= f.maxB || seq - this.lastG < f.reload * 60 - 0.5) return;
     this.lastG = seq;
     const d = f.pd, along = (f.px - f.hx) * DX[d] + (f.py - f.hy) * DY[d];
-    this.ghosts.push({ s: seq, x: f.px + 8 + DX[d] * 7, y: f.py + 8 + DY[d] * 7, d, sp: f.bs, t: performance.now(), run: Math.max(0, f.run[d] - along), T: f.T });
+    const angs = fanAngs({ pellets: f.np, spread: f.np > 1 }), base = Math.atan2(DY[d], DX[d]);
+    angs.forEach((a, j) => this.ghosts.push({ s: seq, x: f.px + 8 + DX[d] * 7, y: f.py + 8 + DY[d] * 7, ux: Math.cos(base + a), uy: Math.sin(base + a), main: !j,
+      sp: f.bs, t: performance.now(), run: Math.max(0, (j ? f.side[d][j - 1] : f.run[d]) - along), T: f.T }));
   },
   // сдвиг своей пули: сколько она пролетит за шаги, которых хост ещё не видел
   lead(vx, vy, run, ack) {
@@ -516,10 +534,11 @@ const Pred = {
     for (const q of this.ghosts) {
       const dist = q.sp * (Net.kseq - q.s + 1) / 60; // в шагах, как lead у настоящей пули — при подмене не дёргается
       if (dist >= q.run) continue; // долетела до стены — ждём, что скажет хост
-      const x = Math.round(q.x + DX[q.d] * dist), y = Math.round(q.y + DY[q.d] * dist);
-      ctx.setTransform(q.T);
-      if (q.d & 1) { rect(ctx, x - 2, y - 1, 4, 3, '#fcfcfc'); rect(ctx, DX[q.d] < 0 ? x - 3 : x + 2, y, 1, 1, '#fcfcfc'); }
-      else { rect(ctx, x - 1, y - 2, 3, 4, '#fcfcfc'); rect(ctx, x, DY[q.d] < 0 ? y - 3 : y + 2, 1, 1, '#fcfcfc'); }
+      const x = Math.round(q.x + q.ux * dist), y = Math.round(q.y + q.uy * dist), ax = Math.abs(q.ux), ay = Math.abs(q.uy);
+      ctx.setTransform(q.T); // форма как у Bullet.drawShape
+      if (ay > ax * 2.5) { rect(ctx, x - 1, y - 2, 3, 4, '#fcfcfc'); rect(ctx, x, q.uy < 0 ? y - 3 : y + 2, 1, 1, '#fcfcfc'); }
+      else if (ax > ay * 2.5) { rect(ctx, x - 2, y - 1, 4, 3, '#fcfcfc'); rect(ctx, q.ux < 0 ? x - 3 : x + 2, y, 1, 1, '#fcfcfc'); }
+      else rect(ctx, x - 1, y - 1, 3, 3, '#fcfcfc');
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   },

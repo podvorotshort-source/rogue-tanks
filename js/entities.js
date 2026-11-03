@@ -569,15 +569,14 @@ class Player extends Tank {
     this.lastShot = G.time;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
     // широкий веер; боковые дробины бьют вполсилы и гаснут на ~90 px — дробовик силён вблизи и по толпе, а не по одной цели
-    const step = s.pellets >= 7 ? 0.12 : s.pellets >= 5 ? 0.15 : 0.24, angs = [0];
-    if (s.spread) for (let k = 1; k <= (s.pellets - 1) >> 1; k++) angs.push(-step * k, step * k);
+    const angs = fanAngs(s); // remote.js — те же углы рисует гость онлайн
     const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7, adren = this.adren > 0 ? 2 : 1; // «Адреналин»
     for (const a of angs) {
       const ch = charged && a === 0, side = a !== 0;
       G.bullets.push(new Bullet(bx, by, Math.cos(base + a) * s.bspeed, Math.sin(base + a) * s.bspeed, 'player', this, {
         dmg: s.dmg * (ch ? 3 : 1) * adren * (side ? 0.5 : 1), power: s.power, pierce: s.pierce + (ch ? 1 : 0), bounce: s.bounce, explosive: s.explosive,
         size: (s.dmg > 1 || ch || adren > 1) && !side ? 5 : 4, counts: !side, fx: s.fx, col: elemCol(s.fx), charged: ch, ion: !!this.perks.ion,
-        life: side ? 90 / s.bspeed : 0,
+        life: side ? SIDE_RUN / s.bspeed : 0,
       }));
     }
     G.effects.push(new Boom(bx + DX[this.dir] * 2, by + DY[this.dir] * 2, charged ? 6 : 3, { dur: charged ? 0.15 : 0.08, quiet: true }));
