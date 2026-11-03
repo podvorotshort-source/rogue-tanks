@@ -408,7 +408,7 @@ const Play = {
         if (op === 0 && a && this.mk) this.turn(a);
         if (g && a) try { g[REM_M[op]](...a); } catch (e) { /* пропуск */ }
       }
-      else if (op < OP_TGT) { const a = this.args(r); if (g && a) try { g[REM_P[op - OP_PROP]] = a[0]; } catch (e) { /* пропуск */ } }
+      else if (op < OP_SHOT) { const a = this.args(r); if (g && a) try { g[REM_P[op - OP_PROP]] = a[0]; } catch (e) { /* пропуск */ } }
       else if (op === OP_TGT) g = this.ctxOf(r.v());
       else if (op === OP_MAC) {
         const name = REM_MAC[r.b()], a = this.args(r);
