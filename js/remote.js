@@ -514,7 +514,7 @@ const Pred = {
     const now = performance.now();
     this.ghosts = this.ghosts.filter(q => q.s > this.ack && now - q.t < 1000);
     for (const q of this.ghosts) {
-      const dist = q.sp * (now - q.t) / 1000;
+      const dist = q.sp * (Net.kseq - q.s + 1) / 60; // в шагах, как lead у настоящей пули — при подмене не дёргается
       if (dist >= q.run) continue; // долетела до стены — ждём, что скажет хост
       const x = Math.round(q.x + DX[q.d] * dist), y = Math.round(q.y + DY[q.d] * dist);
       ctx.setTransform(q.T);
