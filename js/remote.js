@@ -281,13 +281,6 @@ const Rec = {
 // ============================================================
 // сколько пикселей (до BUL_RUN) пролетит пуля размера size из (x, y) по (ux, uy), пока не упрётся в кирпич, сталь или край поля
 const BUL_RUN = 120;
-// углы веера выстрела, как Player.tryFire: 0 — основной снаряд, дальше боковые дробины парами
-function fanAngs(s) {
-  const step = s.pellets >= 7 ? 0.12 : s.pellets >= 5 ? 0.15 : 0.24, angs = [0];
-  if (s.spread) for (let k = 1; k <= (s.pellets - 1) >> 1; k++) angs.push(-step * k, step * k);
-  return angs;
-}
-const SIDE_RUN = 90; // боковые дробины гаснут на ~90 px (life в tryFire)
 function bulletRun(x, y, ux, uy, size) {
   const h = size / 2, L = G.level;
   if (!L) return 0;

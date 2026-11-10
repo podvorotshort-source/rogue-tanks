@@ -454,6 +454,14 @@ const CLASSES = {
 const CLASS_LIST = ['assault', 'scout', 'heavy'];
 const MAX_WEAPON = 15; // предел без талантов — 5, «Оружейник» — 10, «Легенда» — 15
 
+// углы веера выстрела: 0 — основной снаряд, дальше боковые дробины парами (те же углы рисует гость онлайн, js/remote.js)
+function fanAngs(s) {
+  const step = s.pellets >= 7 ? 0.12 : s.pellets >= 5 ? 0.15 : 0.24, angs = [0];
+  if (s.spread) for (let k = 1; k <= (s.pellets - 1) >> 1; k++) angs.push(-step * k, step * k);
+  return angs;
+}
+const SIDE_RUN = 90; // боковые дробины гаснут на ~90 px
+
 class Player extends Tank {
   constructor(idx, cls, ctrl, colorIdx) {
     super(0, 0, 0);
@@ -569,7 +577,7 @@ class Player extends Tank {
     this.lastShot = G.time;
     const base = Math.atan2(DY[this.dir], DX[this.dir]);
     // широкий веер; боковые дробины бьют вполсилы и гаснут на ~90 px — дробовик силён вблизи и по толпе, а не по одной цели
-    const angs = fanAngs(s); // remote.js — те же углы рисует гость онлайн
+    const angs = fanAngs(s);
     const bx = this.cx + DX[this.dir] * 7, by = this.cy + DY[this.dir] * 7, adren = this.adren > 0 ? 2 : 1; // «Адреналин»
     for (const a of angs) {
       const ch = charged && a === 0, side = a !== 0;
