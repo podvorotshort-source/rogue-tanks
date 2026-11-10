@@ -45,12 +45,13 @@ class Boss {
     this.immune = 6; this.flash = 0;
     G.banner(tr(this.name) + ' ' + tr('НЕУЯЗВИМ!'), '#3cbcfc');
     Sound.play('shield');
+    for (const B of this.shieldBoxes()) G.effects.push(new RingFx(B.x + B.w / 2, B.y + B.h / 2, 8, 40, '#3cbcfc', 0.5));
     const a = this.aim();
-    G.effects.push(new RingFx(a.x, a.y, 8, 40, '#3cbcfc', 0.5));
     G.spawnMinions(G.players.length > 1 ? 4 : 3, pick(['armor', 'power', 'fast']), a.x, a.y);
   }
   blocks() { return false; }
   hitTest() { return null; }
+  shieldBoxes() { return [this.bounds()]; } // рамки щита неуязвимости: у близнецов — у каждого своя
   // сдвиг стартовой позиции (в дуэте боссы не должны появляться друг на друге)
   shift(dx, dy) {
     this.x += dx; this.y += dy;
@@ -674,6 +675,7 @@ class Twins extends Boss {
     this.state = 'enter'; this.pincerT = 8; this.pincer = 0; this.ringT = 4; this.rage = false;
   }
   living() { return this.twins.filter(t => !t.dead); }
+  shieldBoxes() { return this.living().map(t => ({ x: t.x, y: t.y, w: 32, h: 32 })); }
   aim() { const t = this.living()[0] || this.twins[0]; return { x: t.x + 16, y: t.y + 16 }; }
   bounds() {
     const L = this.living().length ? this.living() : this.twins;
@@ -1852,14 +1854,16 @@ function makeTrio(k, scale) { return new Duo(TRIO_BOSSES[k], scale, k); }
 function drawBossImmune(g) {
   for (const b of G.boss.subs || [G.boss]) {
     if (!(b.immune > 0) || !b.alive || b.dying) continue;
-    const B = b.bounds(), cx = Math.round(B.x + B.w / 2), cy = Math.round(B.y + B.h / 2);
-    g.save();
-    g.globalAlpha = b.shieldT > 0 ? 0.9 : 0.45 + 0.25 * Math.sin(G.time * 12);
-    g.strokeStyle = Math.floor(G.time * 10) % 2 ? '#3cbcfc' : '#a4e4fc'; g.lineWidth = 2;
-    g.beginPath(); g.ellipse(cx, cy, B.w / 2 + 6, B.h / 2 + 6, 0, 0, Math.PI * 2); g.stroke();
-    g.restore();
-    if (b.immune < 1.5 && Math.floor(G.time * 8) % 2) continue; // мигает перед снятием
-    text(String(Math.ceil(b.immune)), cx, Math.max(2, Math.round(B.y - 12)), '#3cbcfc', 1, 'center', '#000');
+    for (const B of b.shieldBoxes()) {
+      const cx = Math.round(B.x + B.w / 2), cy = Math.round(B.y + B.h / 2);
+      g.save();
+      g.globalAlpha = b.shieldT > 0 ? 0.9 : 0.45 + 0.25 * Math.sin(G.time * 12);
+      g.strokeStyle = Math.floor(G.time * 10) % 2 ? '#3cbcfc' : '#a4e4fc'; g.lineWidth = 2;
+      g.beginPath(); g.ellipse(cx, cy, B.w / 2 + 6, B.h / 2 + 6, 0, 0, Math.PI * 2); g.stroke();
+      g.restore();
+      if (b.immune < 1.5 && Math.floor(G.time * 8) % 2) continue; // мигает перед снятием
+      text(String(Math.ceil(b.immune)), cx, Math.max(2, Math.round(B.y - 12)), '#3cbcfc', 1, 'center', '#000');
+    }
   }
 }
 function tickBossImmune(dt) {
